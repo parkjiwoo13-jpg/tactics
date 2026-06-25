@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>축구 전술 보드</title>
+<!-- ===== iPhone 홈 화면 앱 설정 (자동 추가) ===== -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="전술보드">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#10241a">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
+<style>
+  :root{
+    --bg:#10241a; --panel:#16352a; --line:#2f6b4f;
+    --grass1:#2e7d4f; --grass2:#2a7549;
+    --home:#e89b86; --away:#1c1c1c; --ball:#f4d35e;
+    --txt:#eaf4ee; --accent:#3ad07e;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; height:100%; background:var(--bg); color:var(--txt);
+    font-family:"맑은 고딕","Malgun Gothic",system-ui,sans-serif; overflow:hidden;}
+  #app{display:flex; flex-direction:column; height:100%;}
+
+  header{display:flex; align-items:center; gap:8px; padding:8px 12px;
+    background:var(--panel); flex-wrap:wrap;}
+  header h1{font-size:16px; margin:0 8px 0 0; font-weight:700;}
+  .toolbar{display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
+  button, select{font-family:inherit; font-size:13px; color:var(--txt);
+    background:#214a39; border:1px solid var(--line); border-radius:7px;
+    padding:6px 10px; cursor:pointer;}
+  button:hover{background:#2a5e49;}
+  button.active{background:var(--accent); color:#05231a; border-color:var(--accent); font-weight:700;}
+  .sep{width:1px; height:24px; background:var(--line); margin:0 2px;}
+
+  #stage{flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:8px;}
+  #fieldWrap{position:relative; border-radius:8px; overflow:hidden;
+    box-shadow:0 6px 24px rgba(0,0,0,.5);}   /* 크기는 JS fit()가 지정 */
+  #pitch{position:absolute; inset:0; width:100%; height:100%; display:block;}
+  #draw{position:absolute; inset:0; width:100%; height:100%; touch-action:none;}
+  #draw.drawing{cursor:crosshair;}
+
+  .token{position:absolute; transform:translate(-50%,-50%);
+    width:7%; aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+    border-radius:50%; color:#fff; font-weight:700; font-size:min(2.6vh,15px);
+    border:2px solid rgba(255,255,255,.85); cursor:grab; user-select:none;
+    touch-action:none; box-shadow:0 2px 6px rgba(0,0,0,.45);}
+  .token.home{background:var(--home);}
+  .token.away{background:var(--away);}
+  .token.ball{width:5.2%; background:transparent; border:none; box-shadow:none;
+    font-size:min(4.6vh,32px); line-height:1;}
+  .token.cone{width:5%; background:transparent; border:none; box-shadow:none;
+    font-size:min(4.2vh,28px); line-height:1;}
+  .token.text{width:auto; aspect-ratio:auto; height:auto; border-radius:7px;
+    background:rgba(10,30,22,.82); border:1px solid rgba(255,255,255,.3); color:#fff;
+    font-size:min(2.1vh,13px); font-weight:700; padding:4px 9px; white-space:nowrap;
+    box-shadow:0 2px 6px rgba(0,0,0,.4);}
+  .token .lbl{position:absolute; top:108%; left:50%; transform:translateX(-50%);
+    font-size:min(1.8vh,11px); white-space:nowrap; color:var(--txt);
+    text-shadow:0 1px 2px #000; pointer-events:none; font-weight:600;}
+  .token.dragging{cursor:grabbing; z-index:50; filter:brightness(1.15);}
+
+  input[type=color]{width:34px; height:26px; padding:0; margin-left:4px;
+    border:1px solid var(--line); border-radius:6px; background:none; cursor:pointer; vertical-align:middle;}
+
+  #rosterPanel{position:fixed; top:0; right:0; height:100%; width:min(440px,93vw);
+    background:var(--panel); box-shadow:-4px 0 26px rgba(0,0,0,.55); z-index:100;
+    display:flex; flex-direction:column; transition:transform .22s ease;}
+  #rosterPanel.hidden{transform:translateX(106%);}
+  .rosterHead{display:flex; justify-content:space-between; align-items:center;
+    padding:12px 14px; border-bottom:1px solid var(--line); font-weight:700; font-size:15px;}
+  .rosterHead button{padding:4px 9px;}
+  .rosterBody{flex:1; overflow:auto; display:flex; gap:12px; padding:12px 14px;}
+  .rosterCol{flex:1; min-width:0;}
+  .rosterCol h3{margin:0 0 8px; font-size:15px; text-align:center;}
+  .secLbl{margin:10px 0 5px; font-size:12px; font-weight:700; color:var(--accent);
+    border-bottom:1px solid var(--line); padding-bottom:3px;}
+  .secLbl:first-child{margin-top:0;}
+  .rrow{display:flex; gap:5px; margin-bottom:5px;}
+  .rrow input{font-family:inherit; font-size:13px; color:var(--txt); background:#0e2c20;
+    border:1px solid var(--line); border-radius:6px; padding:6px;}
+  .rrow input.num{width:40px; text-align:center;}
+  .rrow input.name{flex:1; min-width:0;}
+
+  /* ---------- 후보 벤치 (좌측 세로 패널) ---------- */
+  #benchPanel{position:fixed; left:0; top:0; bottom:0; z-index:90; width:min(220px,72vw);
+    display:flex; flex-direction:column;
+    background:var(--panel); box-shadow:4px 0 22px rgba(0,0,0,.5);
+    border-right:1px solid var(--line); transition:transform .22s ease;}
+  #benchPanel.hidden{transform:translateX(-108%);}
+  .benchHead{display:flex; justify-content:space-between; align-items:flex-start; gap:6px;
+    padding:10px 12px; border-bottom:1px solid var(--line); font-size:12px; color:#cfe7da; line-height:1.4;}
+  .benchHead button{padding:4px 9px; flex-shrink:0;}
+  .benchBody{flex:1; display:flex; flex-direction:column; gap:10px; padding:12px; overflow:auto;}
+  .benchTeam{display:flex; flex-direction:column; align-items:flex-start; gap:7px;}
+  .benchLbl{font-size:12px; font-weight:700;}
+  .benchRow{display:flex; gap:8px; flex-wrap:wrap; align-items:center; min-height:42px;}
+  .benchItem{display:flex; flex-direction:column; align-items:center; justify-content:center;
+    width:42px; height:42px; border-radius:50%; color:#fff; font-weight:700; font-size:13px;
+    border:2px solid rgba(255,255,255,.85); cursor:grab; user-select:none; touch-action:none;
+    box-shadow:0 2px 6px rgba(0,0,0,.4); flex-shrink:0; line-height:1; text-align:center;}
+  .benchItem.home{background:var(--home);}
+  .benchItem.away{background:var(--away);}
+  .benchItem .bname{font-size:8.5px; font-weight:600; max-width:40px; overflow:hidden;
+    white-space:nowrap; text-overflow:ellipsis;}
+  .benchItem.dragging{filter:brightness(1.15);}
+  .benchEmpty{font-size:12px; color:#8fb3a2; opacity:.8;}
+
+  footer{padding:6px 12px; background:var(--panel); font-size:12px; color:#9fc7b3; text-align:center;}
+  .hint{opacity:.85;}
+  .tabs{display:flex; gap:6px; width:100%; margin-bottom:6px;}
+  .tab{font-size:14px; font-weight:700; padding:7px 18px; background:#1c4435;}
+  .tab.active{background:var(--accent); color:#05231a; border-color:var(--accent);}
+  .toolgrp{display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
+  #caption{position:absolute; bottom:8px; left:50%; transform:translateX(-50%);
+    max-width:94%; background:rgba(10,30,22,.9); color:#fff; padding:6px 13px;
+    border-radius:8px; font-size:12.5px; line-height:1.4; text-align:center; z-index:40;
+    pointer-events:none; border:1px solid rgba(255,255,255,.25);}
+  #caption.hidden{display:none;}
+  #caption b{color:var(--accent);}
+
+  /* ---------- 쿼터 로테이션 패널 ---------- */
+  #rotaPanel{position:fixed; top:0; right:0; height:100%; width:min(460px,95vw);
+    background:var(--panel); box-shadow:-4px 0 26px rgba(0,0,0,.55); z-index:110;
+    display:flex; flex-direction:column; transition:transform .22s ease;}
+  #rotaPanel.hidden{transform:translateX(106%);}
+  .rotaBody{flex:1; overflow:auto; padding:14px;}
+  .rotaSetup{display:flex; flex-direction:column; gap:9px;}
+  .rotaLbl{font-size:13px; font-weight:700; color:var(--accent);}
+  .rotaMini{font-weight:400; color:#9fc7b3; font-size:11px;}
+  #rotaNames{font-family:inherit; font-size:14px; color:var(--txt); background:#0e2c20;
+    border:1px solid var(--line); border-radius:7px; padding:9px; resize:vertical; line-height:1.6;}
+  .rotaOpts{display:flex; gap:14px; flex-wrap:wrap; align-items:center; font-size:13px;}
+  .rotaOpts input[type=number]{width:60px; font-family:inherit; font-size:14px; color:var(--txt);
+    background:#0e2c20; border:1px solid var(--line); border-radius:6px; padding:6px; text-align:center;}
+  .rotaGkLbl{display:flex; align-items:center; gap:6px;}
+  #rotaGk{max-width:220px;}
+  .rotaWide{width:100%;}
+  .rotaPrimary{background:var(--accent); color:#05231a; font-weight:700; border-color:var(--accent); padding:10px;}
+  .rotaResult{margin-top:14px; display:flex; flex-direction:column; gap:14px;}
+  .rotaTableWrap{overflow-x:auto;}
+  table.rotaTable{border-collapse:collapse; width:100%; font-size:13px;}
+  table.rotaTable th, table.rotaTable td{border:1px solid var(--line); padding:6px 4px; text-align:center; white-space:nowrap;}
+  table.rotaTable th{background:#1c4435; color:#cfe7da; font-weight:700;}
+  table.rotaTable td.nm{text-align:left; padding-left:8px; font-weight:600;}
+  table.rotaTable td.on{color:var(--accent); font-weight:700;}
+  table.rotaTable td.off{color:#6f8f80;}
+  table.rotaTable td.gkc{color:#f4d35e; font-weight:700;}
+  table.rotaTable td.tot{font-weight:700; background:#13302440;}
+  .rotaQ{border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:#13302a;}
+  .rotaQ h4{margin:0 0 6px; font-size:14px; color:var(--accent); display:flex; justify-content:space-between; align-items:center;}
+  .rotaQ .qline{font-size:12.5px; line-height:1.6; color:var(--txt);}
+  .rotaQ .qoff{color:#9fb3a8;}
+  .rotaQ button{padding:6px 12px; font-size:12.5px;}
+  .rotaNote{font-size:12px; color:#9fc7b3; line-height:1.5;}
+  .rotaWarn{color:#ffb4a8; font-size:12.5px; font-weight:600;}
+  /* 홈 명단 체크박스로 골라 가져오기 */
+  #rotaPickWrap{border:1px solid var(--line); border-radius:7px; padding:9px; background:#0e2c20;}
+  #rotaPickWrap.hidden{display:none;}
+  .rotaPickHead{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:7px;}
+  .rotaPickHead label{display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; color:var(--accent);}
+  .rotaPickAdd{background:var(--accent); color:#05231a; font-weight:700; border-color:var(--accent); padding:7px 12px;}
+  #rotaPickList{display:flex; flex-direction:column; gap:3px; max-height:240px; overflow:auto;}
+  .rotaPickItem{display:flex; align-items:center; gap:9px; font-size:14px; padding:5px 3px; border-radius:5px;}
+  .rotaPickItem:hover{background:#13302a;}
+  .rotaPickItem input{width:20px; height:20px; accent-color:var(--accent);}
+
+  @media (max-width:560px){
+    header h1{width:100%; margin-bottom:4px;}
+    button,select{padding:7px 9px; font-size:13px;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>⚽ 축구 전술 보드</h1>
+    <div class="tabs">
+      <button id="tabTactics" class="tab active">⚽ 전술</button>
+      <button id="tabTraining" class="tab">🏃 훈련</button>
+    </div>
+    <div class="toolbar">
+      <span id="tacticsTools" class="toolgrp">
+        <label style="font-size:13px;">포메이션
+          <select id="formationSel">
+            <option value="442">4-4-2</option>
+            <option value="433">4-3-3</option>
+            <option value="4231">4-2-3-1</option>
+            <option value="352">3-5-2</option>
+            <option value="532">5-3-2</option>
+            <option value="4141">4-1-4-1</option>
+          </select>
+        </label>
+        <select id="teamSel">
+          <option value="home">홈 팀에 적용</option>
+          <option value="away">원정 팀에 적용</option>
+        </select>
+        <button id="applyBtn">배치</button>
+        <label style="font-size:13px;">홈색<input type="color" id="homeColor" value="#e89b86"></label>
+        <label style="font-size:13px;">원정색<input type="color" id="awayColor" value="#1c1c1c"></label>
+        <button id="rosterBtn">📋 선수명단</button>
+        <button id="benchBtn">🔁 후보</button>
+        <button id="rotaBtn">🔄 쿼터로테</button>
+      </span>
+      <span id="trainingTools" class="toolgrp" style="display:none;">
+        <button id="addHome">🧍 선수(홈)</button>
+        <button id="addAway">🧍 선수(원정)</button>
+        <button id="addBall">⚽ 공</button>
+        <button id="addCone">🔺 고깔</button>
+        <span style="font-size:12px; color:#9fc7b3;">(추가 항목은 더블클릭 시 삭제)</span>
+      </span>
+      <span class="sep"></span>
+      <label style="font-size:13px;">색
+        <select id="penColor">
+          <option value="#ff6b6b" selected>빨강</option>
+          <option value="#f4d35e">노랑</option>
+          <option value="#ffffff">흰색</option>
+          <option value="#3ad07e">초록</option>
+        </select>
+      </label>
+      <label style="font-size:13px;">선
+        <select id="penType">
+          <option value="line" selected>선</option>
+          <option value="arrow">화살표선</option>
+          <option value="dashed">점선</option>
+          <option value="dashedArrow">점선화살표</option>
+        </select>
+      </label>
+      <button id="addText">🆎 글자</button>
+      <button id="delStrokeBtn">✂ 선택삭제</button>
+      <button id="undoBtn">↶ 되돌리기</button>
+      <button id="redoBtn">↷ 다시실행</button>
+      <button id="clearDraw">선 지우기</button>
+      <span class="sep"></span>
+      <button id="toggleLbl">이름 표시</button>
+      <button id="saveBtn">🖼️ 이미지 저장</button>
+      <span class="sep"></span>
+      <button id="saveSitBtn">💾 상황저장</button>
+      <select id="loadSel"><option value="">저장목록…</option></select>
+      <button id="loadBtn">📂 불러오기</button>
+      <button id="delBtn">🗑 삭제</button>
+      <span class="sep"></span>
+      <select id="presetSel"><option value="">예시 도안…</option></select>
+      <button id="presetBtn">▶ 예시 적용</button>
+      <span class="sep"></span>
+      <button id="resetBtn">전체 초기화</button>
+    </div>
+  </header>
+
+  <div id="stage">
+    <div id="fieldWrap">
+      <canvas id="pitch"></canvas>
+      <canvas id="draw"></canvas>
+      <div id="caption" class="hidden"></div>
+      <!-- 선수 토큰은 JS가 생성 -->
+    </div>
+  </div>
+
+  <footer>
+    <span class="hint">아이콘을 끌면 이동 · 빈 필드를 끌면 선이 그려짐(선 종류 선택 가능) · 선수 더블클릭(더블탭)으로 이름·번호 수정 · Ctrl+Z 되돌리기</span>
+  </footer>
+
+  <div id="rosterPanel" class="hidden">
+    <div class="rosterHead">
+      <span>📋 선수 명단</span>
+      <span>
+        <button id="rosterSaveBtn">💾 명단 저장</button>
+        <button id="rosterExportBtn">📦 배포본 저장</button>
+        <button id="rosterClose">✕ 닫기</button>
+      </span>
+    </div>
+    <div class="rosterBody">
+      <div class="rosterCol">
+        <h3 id="homeTitle" style="color:var(--home)">홈</h3>
+        <div id="homeList"></div>
+      </div>
+      <div class="rosterCol">
+        <h3 id="awayTitle" style="color:var(--away)">원정</h3>
+        <div id="awayList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="benchPanel" class="hidden">
+    <div class="benchHead">
+      <span>🔁 후보 벤치 — 아이콘을 <b>교체할 선수 쪽으로</b> 끌어다 놓으면 가장 가까운 같은 팀 선수와 바뀝니다</span>
+      <button id="benchClose">✕ 닫기</button>
+    </div>
+    <div class="benchBody">
+      <div class="benchTeam"><span class="benchLbl" style="color:var(--home)">홈 후보</span><div id="benchHome" class="benchRow"></div></div>
+      <div class="benchTeam"><span class="benchLbl" style="color:var(--away)">원정 후보</span><div id="benchAway" class="benchRow"></div></div>
+    </div>
+  </div>
+
+  <div id="rotaPanel" class="hidden">
+    <div class="rosterHead">
+      <span>🔄 쿼터 로테이션</span>
+      <button id="rotaClose">✕ 닫기</button>
+    </div>
+    <div class="rotaBody">
+      <div class="rotaSetup">
+        <label class="rotaLbl">회원 명단 <span class="rotaMini">(한 줄에 한 명, 먼저 온 순서대로)</span></label>
+        <textarea id="rotaNames" rows="7" placeholder="홍길동&#10;김철수&#10;이영희&#10;박지성 2   ← 지각, 2쿼터만(뒤쪽)&#10;최영 지각   ← 2쿼터만"></textarea>
+        <div class="rotaMini">• 위에 입력한 순서 = 도착 순서 → 먼저 온 사람이 1쿼터부터 우선 출전<br>• 지각자는 이름 뒤에 <b>출전할 쿼터 수</b>를 쓰면 뒤쪽 쿼터로 배정 (예: <b>박지성 2</b> 또는 <b>박지성 지각</b>)</div>
+        <button id="rotaFromRoster" class="rotaWide">📋 홈 명단에서 골라 가져오기</button>
+        <div id="rotaPickWrap" class="hidden">
+          <div class="rotaPickHead">
+            <label><input type="checkbox" id="rotaPickAll"> 전체 선택</label>
+            <button id="rotaPickAdd" class="rotaPickAdd">✓ 선택한 선수 추가</button>
+          </div>
+          <div id="rotaPickList"></div>
+        </div>
+        <div class="rotaOpts">
+          <label>쿼터 수 <input id="rotaQuarters" type="number" min="1" max="12" value="4"></label>
+          <label>쿼터당 출전 <input id="rotaField" type="number" min="1" max="11" value="11"></label>
+        </div>
+        <div class="rotaOpts">
+          <label class="rotaGkLbl">고정 골키퍼
+            <select id="rotaGk"><option value="">(없음 / 전원 로테)</option></select>
+          </label>
+        </div>
+        <button id="rotaCalc" class="rotaWide rotaPrimary">⚖️ 균등 분배하기</button>
+      </div>
+      <div id="rotaResult" class="rotaResult"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const wrap = document.getElementById('fieldWrap');
+const pitch = document.getElementById('pitch');
+const draw  = document.getElementById('draw');
+const pctx  = pitch.getContext('2d');
+const dctx  = draw.getContext('2d');
+
+let showLabels = true;
+let strokes = [];             // [{color, pts:[{x,y}...]}]  좌표는 0~1 비율
+let curStroke = null;
+let selected = null;          // 선택된 선/화살표
+let dragInfo = null;          // 선 편집 드래그 정보
+let dragMoved = false;        // 드래그 중 실제 이동 여부
+let history = [];             // 되돌리기/다시실행 기록
+let histIndex = -1;
+let tokens = [];              // 선수/공/고깔 객체
+let activeTab = 'tactics';    // 'tactics' | 'training'
+let addCounter = 0;           // 훈련탭에서 추가한 선수 번호
+
+/* ---------- 포메이션 정의 (홈 기준, y가 클수록 자기 골문=아래) ---------- */
+const F = {
+  '442':[[.5,.93],[.18,.79],[.39,.81],[.61,.81],[.82,.79],[.18,.58],[.39,.60],[.61,.60],[.82,.58],[.40,.41],[.60,.41]],
+  '433':[[.5,.93],[.18,.79],[.39,.81],[.61,.81],[.82,.79],[.32,.62],[.5,.64],[.68,.62],[.20,.42],[.5,.40],[.80,.42]],
+  '4231':[[.5,.93],[.18,.79],[.39,.81],[.61,.81],[.82,.79],[.38,.66],[.62,.66],[.22,.50],[.5,.50],[.78,.50],[.5,.38]],
+  '352':[[.5,.93],[.28,.80],[.5,.81],[.72,.80],[.14,.60],[.35,.62],[.5,.63],[.65,.62],[.86,.60],[.40,.42],[.60,.42]],
+  '532':[[.5,.93],[.14,.80],[.32,.82],[.5,.83],[.68,.82],[.86,.80],[.30,.62],[.5,.63],[.70,.62],[.40,.43],[.60,.43]],
+  '4141':[[.5,.93],[.18,.79],[.39,.81],[.61,.81],[.82,.79],[.5,.66],[.18,.52],[.39,.52],[.61,.52],[.82,.52],[.5,.39]]
+};
+const NUMS = [1,2,3,4,5,6,7,8,9,10,11];
+
+/* ---------- 선수 명단 데이터 (포메이션이 바뀌어도 유지) ---------- */
+const STARTERS = 11;   // 선발 (보드에 배치)
+const SUBS = 12;       // 후보 (명단에만 기입)
+function initRoster(){
+  const arr = [];
+  for(let i=0;i<STARTERS+SUBS;i++) arr.push({num:String(i+1), name:''});
+  return arr;
+}
+/* 배포본에 박아넣는 기본 명단 — 📦 배포본 저장 기능이 아래 한 줄을 교체합니다 */
+const EMBEDDED_ROSTER = {"home": [{"num": "1", "name": "김국진"}, {"num": "3", "name": "황준수"}, {"num": "4", "name": "박지우"}, {"num": "5", "name": "강사풍"}, {"num": "6", "name": "장원규"}, {"num": "7", "name": "이화홍"}, {"num": "8", "name": "홍지관"}, {"num": "9", "name": "김성진"}, {"num": "10", "name": "임성하"}, {"num": "11", "name": "권혁진"}, {"num": "12", "name": "이규진"}, {"num": "13", "name": "류시우"}, {"num": "14", "name": "류한선"}, {"num": "16", "name": "강현우"}, {"num": "19", "name": "김규찬"}, {"num": "21", "name": "송현찬"}, {"num": "26", "name": "정준모"}, {"num": "27", "name": "임윤락"}, {"num": "35", "name": "장문빈"}, {"num": "38", "name": "권태훈"}, {"num": "73", "name": "한태희"}, {"num": "77", "name": "박준성"}, {"num": "94", "name": "김성민"}], "away": [{"num": "1", "name": ""}, {"num": "2", "name": ""}, {"num": "3", "name": ""}, {"num": "4", "name": ""}, {"num": "5", "name": ""}, {"num": "6", "name": ""}, {"num": "7", "name": ""}, {"num": "8", "name": ""}, {"num": "9", "name": ""}, {"num": "10", "name": ""}, {"num": "11", "name": ""}, {"num": "12", "name": ""}, {"num": "13", "name": ""}, {"num": "14", "name": ""}, {"num": "15", "name": ""}, {"num": "16", "name": ""}, {"num": "17", "name": ""}, {"num": "18", "name": ""}, {"num": "19", "name": ""}, {"num": "20", "name": ""}, {"num": "21", "name": ""}, {"num": "22", "name": ""}, {"num": "23", "name": ""}]}; /*__EMBEDDED_ROSTER__*/
+const roster = { home: initRoster(), away: initRoster() };
+let homeColor = '#e89b86';   // 기본 살구색 (변경 가능)
+let awayColor = '#1c1c1c';   // 기본 검정 (변경 가능)
+
+/* ---------- 캔버스 크기 (남은 공간에 항상 맞춤 → 잘림 방지) ---------- */
+function fit(){
+  const stage = document.getElementById('stage');
+  const availW = Math.max(60, stage.clientWidth  - 16);
+  const availH = Math.max(60, stage.clientHeight - 16);
+  const ar = (activeTab==='training') ? 1.5 : (2/3);   // 가로/세로 비율
+  let w = availW, h = w/ar;
+  if(h > availH){ h = availH; w = h*ar; }              // 세로가 넘치면 높이 기준으로
+  wrap.style.width  = Math.round(w)+'px';
+  wrap.style.height = Math.round(h)+'px';
+  const r = wrap.getBoundingClientRect();
+  for(const c of [pitch, draw]){ c.width = r.width; c.height = r.height; }
+  drawPitch(pctx, pitch.width, pitch.height);
+  redrawStrokes();
+}
+window.addEventListener('resize', fit);
+
+/* ---------- 잔디 + 라인 그리기 ---------- */
+function drawPitch(ctx,w,h){
+  if(activeTab==='training'){ return drawHalfPitch(ctx,w,h); }
+  // 잔디 줄무늬
+  const bands = 8, bh = h/bands;
+  for(let i=0;i<bands;i++){
+    ctx.fillStyle = i%2? '#2a7549' : '#2e7d4f';
+    ctx.fillRect(0, i*bh, w, bh+1);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.85)';
+  ctx.lineWidth = Math.max(2, w*0.006);
+  const m = w*0.04;                          // 여백
+  ctx.strokeRect(m, m, w-2*m, h-2*m);        // 외곽
+  // 하프라인
+  ctx.beginPath(); ctx.moveTo(m, h/2); ctx.lineTo(w-m, h/2); ctx.stroke();
+  // 센터서클
+  ctx.beginPath(); ctx.arc(w/2, h/2, w*0.13, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(w/2, h/2, w*0.012, 0, Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
+  // 페널티 박스 (위/아래)
+  const boxW = w*0.46, boxH = h*0.16, gboxW=w*0.22, gboxH=h*0.06;
+  const bx = (w-boxW)/2, gx=(w-gboxW)/2;
+  ctx.strokeRect(bx, m, boxW, boxH);                 // 위 박스
+  ctx.strokeRect(gx, m, gboxW, gboxH);               // 위 골에어리어
+  ctx.strokeRect(bx, h-m-boxH, boxW, boxH);          // 아래 박스
+  ctx.strokeRect(gx, h-m-gboxH, gboxW, gboxH);       // 아래 골에어리어
+  // 페널티 스팟
+  ctx.fillStyle='#fff';
+  for(const sy of [m+boxH*0.66, h-m-boxH*0.66]){
+    ctx.beginPath(); ctx.arc(w/2, sy, w*0.008, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+/* ---------- 반코트(가로) — 훈련 탭 ---------- */
+function drawHalfPitch(ctx,w,h){
+  const u = Math.min(w,h);
+  // 잔디 세로 줄무늬
+  const bands = 9, bw = w/bands;
+  for(let i=0;i<bands;i++){
+    ctx.fillStyle = i%2? '#2a7549' : '#2e7d4f';
+    ctx.fillRect(i*bw, 0, bw+1, h);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.85)';
+  ctx.lineWidth = Math.max(2, u*0.008);
+  ctx.fillStyle = '#fff';
+  const m = u*0.05;
+  const L = m, R = w-m, T = m, B = h-m;          // 경기장 경계
+  ctx.strokeRect(L, T, R-L, B-T);                // 외곽 (오른쪽 변 = 하프라인)
+
+  // 왼쪽 골대/페널티 박스
+  const fieldH = B-T, fieldW = R-L;
+  const pbDepth = fieldW*0.30, pbH = fieldH*0.58;
+  const gaDepth = fieldW*0.11, gaH = fieldH*0.30;
+  const goalH = fieldH*0.16, goalD = u*0.012;
+  const cy = (T+B)/2;
+  ctx.strokeRect(L, cy-pbH/2, pbDepth, pbH);             // 페널티 박스
+  ctx.strokeRect(L, cy-gaH/2, gaDepth, gaH);             // 골 에어리어
+  ctx.strokeRect(L-goalD, cy-goalH/2, goalD, goalH);     // 골대
+
+  // 페널티 스팟 + 아크(박스 바깥쪽 부분만)
+  const spotX = L + pbDepth*0.62;
+  ctx.beginPath(); ctx.arc(spotX, cy, u*0.01, 0, Math.PI*2); ctx.fill();
+  const arcR = fieldH*0.20;
+  const a = Math.acos(Math.min(1,(L+pbDepth - spotX)/arcR));   // 박스 선과 만나는 각도
+  ctx.beginPath();
+  ctx.arc(spotX, cy, arcR, a, -a, true);
+  ctx.stroke();
+
+  // 오른쪽: 하프라인 위 센터서클(반원, 왼쪽으로 볼록)
+  const cr = fieldH*0.28;
+  ctx.beginPath(); ctx.arc(R, cy, cr, Math.PI/2, Math.PI*1.5); ctx.stroke();
+  ctx.beginPath(); ctx.arc(R, cy, u*0.01, 0, Math.PI*2); ctx.fill();
+}
+
+/* ---------- 선수/공/고깔 생성 ---------- */
+function makeToken(team, x, y, label, num, isBall=false, idx=-1, kind=null){
+  if(!kind) kind = isBall ? 'ball' : 'player';
+  const el = document.createElement('div');
+  el.className = 'token ' + kind + (kind==='player' ? ' '+team : '');
+  el.style.left = (x*100)+'%';
+  el.style.top  = (y*100)+'%';
+  if(kind==='ball'){
+    el.textContent = '⚽';
+  } else if(kind==='cone'){
+    el.textContent = '🔺';
+  } else if(kind==='text'){
+    el.textContent = label || '';
+  } else {
+    el.textContent = num;
+    el.innerHTML += `<span class="lbl">${label||''}</span>`;
+  }
+  wrap.appendChild(el);
+  const t = {el, x, y, team, label:((kind==='player'||kind==='text')?label:''), num, isBall:(kind==='ball'), kind, idx};
+  attachDrag(t);
+  // 더블클릭: 전술탭=이름수정(선수만) / 훈련탭=삭제
+  el.addEventListener('dblclick', ()=>onTokenDblClick(t));
+  let lastTap=0;
+  el.addEventListener('touchend', e=>{
+    const now=Date.now(); if(now-lastTap<300){ e.preventDefault(); onTokenDblClick(t);} lastTap=now;
+  });
+  tokens.push(t);
+  return t;
+}
+
+function onTokenDblClick(t){
+  if(t.kind==='text'){
+    if(activeTab==='training'){ removeToken(t); return; }
+    const v = prompt('글자 수정 (비우고 확인하면 삭제)', t.label);
+    if(v===null) return;
+    if(v.trim()===''){ removeToken(t); return; }
+    t.label=v; t.el.textContent=v;
+    return;
+  }
+  if(activeTab==='training'){ removeToken(t); }
+  else if(t.kind==='player' && t.idx>=0){ editToken(t); }
+}
+function removeToken(t){
+  t.el.remove();
+  tokens = tokens.filter(x=>x!==t);
+  if(!benchPanel.classList.contains('hidden')) refreshBench();
+  pushHistory();
+}
+
+function editToken(t){
+  if(t.idx<0) return;
+  const p = roster[t.team][t.idx];
+  const before = p.name+' '+p.num;
+  const v = prompt('선수 이름 (선택)', p.name);
+  if(v!==null) p.name = v.trim();
+  const n = prompt('등번호', p.num);
+  if(n!==null && n.trim()) p.num = n.trim();
+  applyRosterToTokens();
+  syncRosterInputs();
+  saveRoster();
+  if(before !== p.name+' '+p.num) pushHistory();   // 실제 변경 시에만 되돌리기 단계 기록
+}
+
+/* 명단 데이터 → 보드 토큰에 반영 */
+function refreshToken(t){
+  if(t.idx<0) return;
+  const p = roster[t.team][t.idx];
+  t.num = p.num; t.label = p.name || p.num;
+  t.el.firstChild.textContent = p.num;
+  t.el.querySelector('.lbl').textContent = t.label;
+}
+function applyRosterToTokens(){
+  tokens.forEach(t=>{ if(!t.isBall) refreshToken(t); });
+  if(!benchPanel.classList.contains('hidden')) refreshBench();
+}
+
+/* ---------- 드래그 (마우스+터치 공용) ---------- */
+function attachDrag(t){
+  const start = (e)=>{
+    e.preventDefault();
+    e.stopPropagation();              // 아이콘 위에서는 그리기가 시작되지 않게
+    t.el.classList.add('dragging');
+    const startX=t.x, startY=t.y; let moved=false;
+    const move = (ev)=>{
+      const p = pointInWrap(ev);
+      t.x = Math.min(1, Math.max(0, p.x));
+      t.y = Math.min(1, Math.max(0, p.y));
+      t.el.style.left = (t.x*100)+'%';
+      t.el.style.top  = (t.y*100)+'%';
+      moved=true;
+    };
+    const end = ()=>{
+      t.el.classList.remove('dragging');
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', end);
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', end);
+      if(moved && (t.x!==startX || t.y!==startY)) pushHistory();   // 선수 이동도 되돌리기 가능
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end);
+  };
+  t.el.addEventListener('mousedown', start);
+  t.el.addEventListener('touchstart', start, {passive:false});
+}
+
+function pointInWrap(e){
+  const r = wrap.getBoundingClientRect();
+  const cx = e.touches? e.touches[0].clientX : e.clientX;
+  const cy = e.touches? e.touches[0].clientY : e.clientY;
+  return {x:(cx-r.left)/r.width, y:(cy-r.top)/r.height};
+}
+
+/* ---------- 그리기 (빈 필드를 끌면 자동으로 선이 그려짐) ---------- */
+draw.style.pointerEvents='none';     // 오버레이는 클릭을 통과시킴(아이콘 클릭 가능)
+
+// 점-선분 거리(픽셀)
+function distToSeg(p, a, b, W, H){
+  const px=p.x*W, py=p.y*H, ax=a.x*W, ay=a.y*H, bx=b.x*W, by=b.y*H;
+  const dx=bx-ax, dy=by-ay, len2=dx*dx+dy*dy;
+  let t = len2 ? ((px-ax)*dx+(py-ay)*dy)/len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const cx=ax+t*dx, cy=ay+t*dy;
+  return Math.hypot(px-cx, py-cy);
+}
+function ptDist(p, a, W, H){ return Math.hypot((p.x-a.x)*W, (p.y-a.y)*H); }
+// 클릭 위치에서 가장 위의 선/화살표 찾기
+function hitTest(p){
+  const W=draw.width, H=draw.height, tol=Math.max(10, W*0.02);
+  for(let i=strokes.length-1; i>=0; i--){
+    const s=strokes[i], a=s.pts[0], b=s.pts[s.pts.length-1];
+    if(ptDist(p,a,W,H) < tol*1.5) return {stroke:s, part:'end0'};
+    if(ptDist(p,b,W,H) < tol*1.5) return {stroke:s, part:'endN'};
+    for(let j=0;j<s.pts.length-1;j++){
+      if(distToSeg(p, s.pts[j], s.pts[j+1], W,H) < tol) return {stroke:s, part:'move'};
+    }
+  }
+  return null;
+}
+
+function drawStart(e){
+  if(e.target.closest && e.target.closest('.token')) return;  // 아이콘 위면 무시
+  const p = pointInWrap(e);
+  const hit = hitTest(p);
+  if(hit){                                   // 기존 선/화살표 선택 → 편집
+    e.preventDefault();
+    selected = hit.stroke;
+    dragInfo = {mode:hit.part, lastX:p.x, lastY:p.y};
+    dragMoved = false;
+    redrawStrokes();
+    return;
+  }
+  // 빈 곳 → 선택 해제 후 새로 그림
+  e.preventDefault();
+  selected = null; dragInfo = null;
+  curStroke = {color: document.getElementById('penColor').value,
+               type: document.getElementById('penType').value, pts:[p]};
+  strokes.push(curStroke);
+  redrawStrokes();
+}
+function drawMove(e){
+  const p = pointInWrap(e);
+  if(dragInfo && selected){                  // 선택한 선 편집(이동/끝점)
+    e.preventDefault();
+    dragMoved = true;
+    if(dragInfo.mode==='move'){
+      const dx=p.x-dragInfo.lastX, dy=p.y-dragInfo.lastY;
+      selected.pts.forEach(pt=>{ pt.x+=dx; pt.y+=dy; });
+    } else if(dragInfo.mode==='end0'){ selected.pts[0]={x:p.x,y:p.y}; }
+    else { selected.pts[selected.pts.length-1]={x:p.x,y:p.y}; }
+    dragInfo.lastX=p.x; dragInfo.lastY=p.y;
+    redrawStrokes();
+    return;
+  }
+  if(!curStroke) return;
+  e.preventDefault();
+  curStroke.pts.push(p);
+  redrawStrokes();
+}
+function drawEnd(){
+  let changed = false;
+  if(curStroke){
+    if(curStroke.pts.length>=2) changed = true;
+    else strokes = strokes.filter(s=>s!==curStroke);   // 점 하나(클릭만)는 제거
+  }
+  if(dragInfo && dragMoved) changed = true;
+  curStroke=null; dragInfo=null; dragMoved=false;
+  if(changed) pushHistory();
+}
+function deleteSelected(){
+  if(!selected) return;
+  strokes = strokes.filter(s=>s!==selected);
+  selected = null; redrawStrokes(); pushHistory();
+}
+wrap.addEventListener('mousedown', drawStart);
+window.addEventListener('mousemove', drawMove);
+window.addEventListener('mouseup', drawEnd);
+wrap.addEventListener('touchstart', drawStart, {passive:false});
+window.addEventListener('touchmove', drawMove, {passive:false});
+window.addEventListener('touchend', drawEnd);
+
+function redrawStrokes(){
+  dctx.clearRect(0,0,draw.width,draw.height);
+  const W=draw.width, H=draw.height;
+  if(selected && strokes.includes(selected)){   // 선택 강조(뒤에 굵은 흰선)
+    dctx.save();
+    dctx.strokeStyle='rgba(255,255,255,.55)'; dctx.setLineDash([]);
+    dctx.lineWidth=Math.max(7, W*0.018); dctx.lineCap='round'; dctx.lineJoin='round';
+    dctx.beginPath(); dctx.moveTo(selected.pts[0].x*W, selected.pts[0].y*H);
+    for(let i=1;i<selected.pts.length;i++) dctx.lineTo(selected.pts[i].x*W, selected.pts[i].y*H);
+    dctx.stroke(); dctx.restore();
+  }
+  for(const s of strokes) drawArrow(dctx, s, W, H);
+  if(selected && strokes.includes(selected)){    // 끝점 손잡이
+    for(const pt of [selected.pts[0], selected.pts[selected.pts.length-1]]){
+      dctx.beginPath(); dctx.arc(pt.x*W, pt.y*H, Math.max(5,W*0.013), 0, Math.PI*2);
+      dctx.fillStyle='#fff'; dctx.fill(); dctx.lineWidth=2; dctx.strokeStyle='#05231a'; dctx.stroke();
+    }
+  }
+}
+function drawArrow(ctx, s, w, h){
+  if(s.pts.length<2) return;
+  const type = s.type || 'arrow';                 // 저장 호환: 없으면 화살표
+  const dashed = (type==='dashed' || type==='dashedArrow');
+  const hasHead = (type==='arrow' || type==='dashedArrow');
+  const lw = Math.max(2.5, w*0.008);
+  ctx.strokeStyle=s.color; ctx.fillStyle=s.color;
+  ctx.lineWidth=lw; ctx.lineCap='round'; ctx.lineJoin='round';
+
+  // 픽셀 좌표 + 전체 길이
+  const P = s.pts.map(p=>({x:p.x*w, y:p.y*h}));
+  const tip = P[P.length-1];
+  let total=0;
+  for(let i=1;i<P.length;i++) total += Math.hypot(P[i].x-P[i-1].x, P[i].y-P[i-1].y);
+
+  // 끝(tip)에서 경로를 dist만큼 거슬러 올라간 점 — 촘촘한 점에도 안정적
+  function pointBack(dist){
+    let rem=dist;
+    for(let i=P.length-1;i>0;i--){
+      const dx=P[i].x-P[i-1].x, dy=P[i].y-P[i-1].y, seg=Math.hypot(dx,dy);
+      if(seg>=rem){ const t=rem/seg; return {x:P[i].x-dx*t, y:P[i].y-dy*t, idx:i}; }
+      rem-=seg;
+    }
+    return {x:P[0].x, y:P[0].y, idx:1};
+  }
+
+  // 화살촉 크기: 선 두께에 비례, 짧은 선이면 축소
+  const headW = 0.46;                                       // 화살촉 반각(rad)
+  let headLen = hasHead ? Math.max(14, lw*3.4) : 0;
+  if(hasHead && total < headLen*1.6) headLen = total*0.6;
+  const setback = hasHead ? headLen*Math.cos(headW)*0.9 : 0;
+
+  const dirPt = hasHead ? pointBack(headLen) : P[0];        // 화살촉 방향 기준점
+  const ang   = Math.atan2(tip.y-dirPt.y, tip.x-dirPt.x);
+  const base  = hasHead ? pointBack(setback) : {x:tip.x, y:tip.y, idx:P.length-1}; // 선 끝(화살촉 밑변). 일반 선도 중간 점 모두 통과
+
+  // 선: base점(화살촉 밑변)까지만 그려 둥근 끝 삐져나옴 방지
+  ctx.setLineDash(dashed ? [w*0.022, w*0.016] : []);
+  ctx.beginPath();
+  ctx.moveTo(P[0].x, P[0].y);
+  for(let i=1;i<base.idx;i++) ctx.lineTo(P[i].x, P[i].y);
+  ctx.lineTo(base.x, base.y);
+  ctx.stroke();
+  ctx.setLineDash([]);                            // 점선 해제(화살촉은 실선)
+  if(hasHead){
+    ctx.beginPath();
+    ctx.moveTo(tip.x, tip.y);                                                  // 꼭지점
+    ctx.lineTo(tip.x-headLen*Math.cos(ang-headW), tip.y-headLen*Math.sin(ang-headW));
+    ctx.lineTo(base.x, base.y);                                                // 밑변 중앙(선과 일치)
+    ctx.lineTo(tip.x-headLen*Math.cos(ang+headW), tip.y-headLen*Math.sin(ang+headW));
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+/* ---------- 배치/초기화 ---------- */
+function placeFormation(team, key){
+  // 해당 팀 토큰 제거(공 제외)
+  tokens = tokens.filter(t=>{ if(t.team===team && !t.isBall){ t.el.remove(); return false;} return true;});
+  const coords = F[key];
+  // 원래 y범위(.38~.93)를 자기 진영(하프라인 안쪽)으로 압축 → 두 팀이 겹치지 않음
+  const MINY=.38, MAXY=.93;
+  coords.forEach((c,i)=>{
+    const x=c[0];
+    let y = 0.52 + (c[1]-MINY)/(MAXY-MINY)*(0.95-0.52);  // 홈: 아래 절반
+    if(team==='away') y = 1 - y;                          // 원정: 위 절반
+    const p = roster[team][i];
+    makeToken(team, x, y, p.name||p.num, p.num, false, i);
+  });
+  applyLabels();
+}
+function ensureBall(){
+  if(!tokens.some(t=>t.isBall)) makeToken('home',0.5,0.5,'볼','',true);
+}
+function applyLabels(){
+  document.querySelectorAll('.token .lbl').forEach(l=> l.style.display = showLabels?'block':'none');
+}
+
+/* ---------- 이미지 저장 ---------- */
+function saveImage(){
+  const w=pitch.width, h=pitch.height;
+  const out=document.createElement('canvas'); out.width=w; out.height=h;
+  const o=out.getContext('2d');
+  drawPitch(o,w,h);
+  for(const s of strokes) drawArrow(o,s,w,h);
+  // 선수
+  o.textAlign='center'; o.textBaseline='middle';
+  for(const t of tokens){
+    const px=t.x*w, py=t.y*h, rad = (t.kind==='player'? w*0.035 : w*0.026);
+    if(t.kind==='ball'){
+      o.font = `${Math.round(rad*2.4)}px sans-serif`;
+      o.fillText('⚽', px, py);
+      continue;
+    }
+    if(t.kind==='cone'){
+      o.font = `${Math.round(rad*2.1)}px sans-serif`;
+      o.fillText('🔺', px, py);
+      continue;
+    }
+    if(t.kind==='text'){
+      o.font = `bold ${Math.round(w*0.021)}px sans-serif`;
+      const tw = o.measureText(t.label).width;
+      const padX = w*0.012, bh = w*0.034;
+      o.fillStyle='rgba(10,30,22,.85)';
+      o.fillRect(px-tw/2-padX, py-bh/2, tw+padX*2, bh);
+      o.fillStyle='#fff'; o.fillText(t.label, px, py);
+      continue;
+    }
+    o.beginPath(); o.arc(px,py,rad,0,Math.PI*2);
+    o.fillStyle = (t.team==='home'? homeColor : awayColor);
+    o.fill(); o.lineWidth=2; o.strokeStyle='rgba(255,255,255,.85)'; o.stroke();
+    {
+      o.fillStyle='#fff'; o.font=`bold ${Math.round(rad*0.9)}px sans-serif`;
+      o.fillText(t.num, px, py);
+      if(showLabels && t.label){
+        o.fillStyle='#fff'; o.font=`bold ${Math.round(rad*0.6)}px sans-serif`;
+        o.fillText(t.label, px, py+rad*1.7);
+      }
+    }
+  }
+  const a=document.createElement('a');
+  a.download='축구전술.png'; a.href=out.toDataURL('image/png'); a.click();
+}
+
+/* ---------- 선수 명단 패널 ---------- */
+function buildRosterList(team, listId){
+  const box = document.getElementById(listId);
+  box.innerHTML = '';
+  const addRow = (i, placeholder)=>{
+    const p = roster[team][i];
+    const row = document.createElement('div');
+    row.className = 'rrow';
+    const num = document.createElement('input');
+    num.className='num'; num.value=p.num; num.maxLength=3;
+    num.oninput = ()=>{ p.num = num.value.trim()||String(i+1); applyRosterToTokens(); saveRoster(); };
+    num.onchange = ()=>{ pushHistory(); };           // 입력 확정 시 되돌리기 단계 기록
+    const name = document.createElement('input');
+    name.className='name'; name.value=p.name; name.placeholder=placeholder;
+    name.oninput = ()=>{ p.name = name.value; applyRosterToTokens(); saveRoster(); };
+    name.onchange = ()=>{ pushHistory(); };           // 입력 확정 시 되돌리기 단계 기록
+    row.appendChild(num); row.appendChild(name);
+    box.appendChild(row);
+  };
+  const sec = (txt)=>{ const d=document.createElement('div'); d.className='secLbl'; d.textContent=txt; box.appendChild(d); };
+
+  sec('선발 11');
+  for(let i=0;i<STARTERS;i++) addRow(i, i===0?'GK 이름':`선발 ${i+1} 이름`);
+  sec('후보 12');
+  for(let i=STARTERS;i<STARTERS+SUBS;i++) addRow(i, `후보 ${i-STARTERS+1} 이름`);
+}
+function buildRosterPanel(){
+  buildRosterList('home','homeList');
+  buildRosterList('away','awayList');
+}
+function syncRosterInputs(){ buildRosterPanel(); }   // 값 변경 후 입력칸 갱신
+
+document.getElementById('rosterBtn').onclick=()=>{
+  document.getElementById('rosterPanel').classList.toggle('hidden');
+};
+document.getElementById('rosterClose').onclick=()=>{
+  document.getElementById('rosterPanel').classList.add('hidden');
+};
+
+/* ---------- 후보 벤치 (드래그 교체/투입) ---------- */
+const benchPanel = document.getElementById('benchPanel');
+// 현재 필드에 올라와 있는 선수의 명단 인덱스 집합
+function onFieldIdx(team){
+  const s = new Set();
+  tokens.forEach(t=>{ if(t.team===team && t.kind==='player' && t.idx>=0) s.add(t.idx); });
+  return s;
+}
+function buildBenchRow(team, rowId){
+  const row = document.getElementById(rowId);
+  row.innerHTML = '';
+  const on = onFieldIdx(team);
+  let count = 0;
+  roster[team].forEach((p, idx)=>{
+    if(on.has(idx)) return;                 // 이미 필드에 있는 선수는 벤치에서 제외
+    const it = document.createElement('div');
+    it.className = 'benchItem ' + team;
+    it.innerHTML = `<span class="bnum">${p.num}</span>` + (p.name ? `<span class="bname">${p.name}</span>` : '');
+    attachBenchDrag(it, team, idx);
+    row.appendChild(it);
+    count++;
+  });
+  if(count===0) row.innerHTML = '<span class="benchEmpty">교체 가능한 선수가 없습니다</span>';
+}
+function refreshBench(){
+  buildBenchRow('home','benchHome');
+  buildBenchRow('away','benchAway');
+}
+// 벤치 아이콘 드래그 → 필드에 드롭
+function attachBenchDrag(el, team, idx){
+  const start = (e)=>{
+    e.preventDefault();
+    const num = roster[team][idx].num;
+    const ghost = document.createElement('div');
+    ghost.className = 'token player ' + team;
+    ghost.style.position='fixed'; ghost.style.width='42px'; ghost.style.height='42px';
+    ghost.style.pointerEvents='none'; ghost.style.zIndex='9999'; ghost.style.opacity='.92';
+    ghost.textContent = num;
+    document.body.appendChild(ghost);
+    const moveTo = (cx,cy)=>{ ghost.style.left=cx+'px'; ghost.style.top=cy+'px'; };
+    const move = (ev)=>{
+      const cx = ev.touches? ev.touches[0].clientX : ev.clientX;
+      const cy = ev.touches? ev.touches[0].clientY : ev.clientY;
+      moveTo(cx,cy);
+    };
+    move(e);
+    const end = (ev)=>{
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', end);
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', end);
+      const t = ev.changedTouches ? ev.changedTouches[0] : ev;
+      ghost.remove();
+      dropBenchPlayer(team, idx, t.clientX, t.clientY);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end);
+  };
+  el.addEventListener('mousedown', start);
+  el.addEventListener('touchstart', start, {passive:false});
+}
+function dropBenchPlayer(team, idx, cx, cy){
+  const r = wrap.getBoundingClientRect();
+  if(cx<r.left || cx>r.right || cy<r.top || cy>r.bottom) return;   // 필드 밖이면 취소
+  // 1) 정확히 올려놓은 같은 팀 선수가 있으면 그 선수와 교체
+  const tgt = document.elementFromPoint(cx, cy);
+  const tokenEl = (tgt && tgt.closest) ? tgt.closest('.token') : null;
+  let hit = tokenEl ? tokens.find(t=>t.el===tokenEl) : null;
+  // 2) 없으면 드롭 지점에서 가장 가까운 같은 팀 선수와 교체
+  if(!(hit && hit.kind==='player' && hit.team===team)){
+    const dx0=(cx-r.left)/r.width, dy0=(cy-r.top)/r.height;
+    let best=null, bd=Infinity;
+    tokens.forEach(t=>{
+      if(t.kind!=='player' || t.team!==team) return;
+      const d = Math.hypot(t.x-dx0, t.y-dy0);
+      if(d<bd){ bd=d; best=t; }
+    });
+    hit = best;
+  }
+  if(hit){
+    hit.idx = idx; refreshToken(hit);                              // 교체: 필드 선수 ↔ 후보
+  } else {
+    const x = Math.min(1, Math.max(0, (cx-r.left)/r.width));       // 같은 팀 선수가 없을 때만 투입
+    const y = Math.min(1, Math.max(0, (cy-r.top)/r.height));
+    const p = roster[team][idx];
+    makeToken(team, x, y, p.name||p.num, p.num, false, idx, 'player');
+  }
+  applyLabels(); refreshBench(); pushHistory();
+}
+document.getElementById('benchBtn').onclick=()=>{ refreshBench(); benchPanel.classList.toggle('hidden'); };
+document.getElementById('benchClose').onclick=()=>{ benchPanel.classList.add('hidden'); };
+
+/* ---------- 쿼터 로테이션 (회원 균등 분배) ---------- */
+let lastRotation = null;
+const rotaPanel = document.getElementById('rotaPanel');
+document.getElementById('rotaBtn').onclick = ()=>{ populateRotaGk(); rotaPanel.classList.toggle('hidden'); };
+document.getElementById('rotaClose').onclick = ()=> rotaPanel.classList.add('hidden');
+
+// 한 줄 = 한 명. 이름 뒤 숫자 = 출전 쿼터 수(지각자는 뒤쪽 쿼터). "지각" 키워드 = 2쿼터.
+function rotaParseMembers(){
+  const seen = new Set(), out = [];
+  document.getElementById('rotaNames').value.split('\n').forEach(line=>{
+    let s = line.trim(); if(!s) return;
+    let cap = null;
+    const m = s.match(/^(.*?)[\s,]+(\d+)\s*$/);
+    if(m){ s = m[1].trim(); cap = parseInt(m[2]); }
+    else if(/(지각|늦게|늦음|late)\s*$/i.test(s)){
+      s = s.replace(/[\s,]*(지각|늦게|늦음|late)\s*$/i,'').trim(); cap = 2;
+    }
+    if(!s || seen.has(s)) return;            // 빈 줄·중복 제거(처음 것 유지)
+    seen.add(s); out.push({name:s, cap});
+  });
+  return out;
+}
+function rotaGetNames(){ return rotaParseMembers().map(m=>m.name); }
+function populateRotaGk(){
+  const sel = document.getElementById('rotaGk'), cur = sel.value, names = rotaGetNames();
+  sel.innerHTML = '<option value="">(없음 / 전원 로테)</option>';
+  if(names.length===0){
+    const o=document.createElement('option'); o.value=''; o.disabled=true;
+    o.textContent='— 먼저 위에 명단을 입력하세요 —'; sel.appendChild(o);
+  }
+  names.forEach(n=>{ const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); });
+  if(names.includes(cur)) sel.value = cur;
+}
+document.getElementById('rotaNames').addEventListener('input', populateRotaGk);
+// 드롭다운을 열 때마다 현재 명단으로 즉시 갱신(타이밍 문제 방지)
+document.getElementById('rotaGk').addEventListener('focus', populateRotaGk);
+document.getElementById('rotaGk').addEventListener('mousedown', populateRotaGk);
+const rotaPickWrap = document.getElementById('rotaPickWrap');
+function buildRotaPick(){
+  const list = document.getElementById('rotaPickList');
+  const have = new Set(rotaGetNames());
+  const names = [], seen = new Set();
+  roster.home.forEach(p=>{ const nm=(p.name||'').trim(); if(nm && !seen.has(nm)){ seen.add(nm); names.push(nm); } });
+  document.getElementById('rotaPickAll').checked = false;
+  if(names.length===0){
+    list.innerHTML =
+      '<div class="rotaMini" style="line-height:1.7">아직 <b>선수명단</b>에 등록된 이름이 없습니다.<br>'
+      + '회원을 한 번 등록해두면 매주 체크만 하면 됩니다.<br>'
+      + '(또는 위 입력칸에 이름을 바로 적어도 됩니다.)</div>'
+      + '<button id="rotaOpenRoster" class="rotaWide" style="margin-top:8px">📋 선수명단 등록하러 가기</button>';
+    const btn = document.getElementById('rotaOpenRoster');
+    if(btn) btn.onclick = ()=>{ rotaPanel.classList.add('hidden'); document.getElementById('rosterPanel').classList.remove('hidden'); };
+    return;
+  }
+  list.innerHTML = names.map(nm=>{
+    const added = have.has(nm);
+    return `<label class="rotaPickItem"><input type="checkbox" value="${nm}" ${added?'checked disabled':''}>`
+         + `${nm}${added?' <span class="rotaMini">(이미 추가됨)</span>':''}</label>`;
+  }).join('');
+}
+document.getElementById('rotaFromRoster').onclick = ()=>{
+  const willShow = rotaPickWrap.classList.contains('hidden');
+  if(willShow) buildRotaPick();
+  rotaPickWrap.classList.toggle('hidden');
+};
+document.getElementById('rotaPickAll').onchange = (e)=>{
+  document.querySelectorAll('#rotaPickList input[type=checkbox]:not(:disabled)').forEach(c=> c.checked = e.target.checked);
+};
+document.getElementById('rotaPickAdd').onclick = ()=>{
+  const ta = document.getElementById('rotaNames');
+  const lines = ta.value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const have = new Set(rotaGetNames());
+  document.querySelectorAll('#rotaPickList input[type=checkbox]:checked:not(:disabled)').forEach(c=>{
+    if(!have.has(c.value)){ lines.push(c.value); have.add(c.value); }
+  });
+  ta.value = lines.join('\n');
+  populateRotaGk();
+  rotaPickWrap.classList.add('hidden');
+};
+
+// 균등 분배: 입력순(=도착순) 우선 + 지각자(뒤쪽 N쿼터만) 반영 + 적게 뛴 사람 우선
+function computeRotation(members, quarters, fieldCount, gkName){
+  const gkOn = gkName ? 1 : 0;
+  const outSlots = Math.max(0, fieldCount - gkOn);
+  const out = members.filter(m=>m.name!==gkName).map((m,i)=>({
+    name:m.name, idx:i,                                  // idx = 입력순(도착순)
+    cap:(m.cap==null) ? quarters : Math.max(0, Math.min(quarters, m.cap))
+  }));
+  const firstQ = m => quarters - m.cap;                  // 처음 뛸 수 있는 쿼터(지각이면 뒤쪽)
+  const remain = (m,q) => quarters - Math.max(q, firstQ(m));  // q부터 끝까지 남은 가능 쿼터
+  const counts = {}; members.forEach(m=> counts[m.name]=0);
+  if(gkName) counts[gkName] = quarters;
+  const plays = {}; out.forEach(m=> plays[m.name]=0);
+  const plan = [];
+  for(let q=0;q<quarters;q++){
+    const eligible = out.filter(m=> q >= firstQ(m));      // 그 쿼터에 도착해 있는 사람
+    eligible.sort((a,b)=>
+      (plays[a.name]-plays[b.name]) ||                   // 1) 적게 뛴 사람 먼저
+      (remain(a,q)-remain(b,q))   ||                     // 2) 남은 가능 쿼터 적은(지각) 사람 먼저
+      (a.idx-b.idx)                                      // 3) 먼저 온(입력순) 사람 먼저
+    );
+    const on = eligible.slice(0, outSlots).map(m=>m.name);
+    on.forEach(nm=>{ plays[nm]++; counts[nm]++; });
+    const onSet = new Set(on);
+    const off = eligible.filter(m=>!onSet.has(m.name)).map(m=>m.name);   // 도착했지만 휴식
+    plan.push({on, off});
+  }
+  return {quarters, fieldCount, gk:gkName, outSlots, members:out, plan, counts};
+}
+
+document.getElementById('rotaCalc').onclick = ()=>{
+  const members = rotaParseMembers(), box = document.getElementById('rotaResult');
+  if(members.length===0){ box.innerHTML = '<div class="rotaWarn">먼저 회원 명단을 입력하세요.</div>'; return; }
+  const quarters  = Math.max(1, Math.min(12, parseInt(document.getElementById('rotaQuarters').value)||4));
+  const fieldCount= Math.max(1, Math.min(11, parseInt(document.getElementById('rotaField').value)||11));
+  let gkName = document.getElementById('rotaGk').value;
+  if(gkName && !members.some(m=>m.name===gkName)) gkName = '';
+  lastRotation = computeRotation(members, quarters, fieldCount, gkName);
+  renderRotation(box, lastRotation);
+};
+
+function renderRotation(box, R){
+  const {quarters, plan, counts, gk, members, outSlots} = R;
+  const capOf = {}; members.forEach(m=> capOf[m.name]=m.cap);
+  const firstQ = nm => quarters - (capOf[nm]==null ? quarters : capOf[nm]);
+  const total = members.length + (gk?1:0);
+  const lateList = members.filter(m=>m.cap<quarters);
+  let html = '';
+  const note = [];
+  note.push(`총 ${total}명` + (gk?` · 고정 GK ${gk}`:''));
+  note.push(`쿼터당 출전 ${R.fieldCount}명` + (gk?` (GK 1 + 필드 ${outSlots})`:''));
+  if(lateList.length) note.push(`지각/제한: ${lateList.map(m=>m.name+' '+m.cap+'Q').join(', ')}`);
+  html += `<div class="rotaNote">${note.join(' · ')}</div>`;
+  html += `<div class="rotaNote">○ 출전 · 휴 휴식 · · 미도착(지각)</div>`;
+
+  html += '<div class="rotaTableWrap"><table class="rotaTable"><thead><tr><th>회원</th>';
+  for(let q=0;q<quarters;q++) html += `<th>${q+1}Q</th>`;
+  html += '<th>합계</th></tr></thead><tbody>';
+  const ordered = (gk?[gk]:[]).concat(members.map(m=>m.name));
+  ordered.forEach(nm=>{
+    const isGk = nm===gk;
+    const cap = isGk?quarters:(capOf[nm]==null?quarters:capOf[nm]);
+    const tag = (!isGk && cap<quarters) ? ` <span class="rotaMini">${cap}Q</span>` : '';
+    html += `<tr><td class="nm">${isGk?'🧤 ':''}${nm}${tag}</td>`;
+    for(let q=0;q<quarters;q++){
+      if(isGk) html += '<td class="gkc">GK</td>';
+      else if(plan[q].on.includes(nm)) html += '<td class="on">○</td>';
+      else if(q>=firstQ(nm)) html += '<td class="off">휴</td>';
+      else html += '<td class="off">·</td>';
+    }
+    html += `<td class="tot">${counts[nm]}</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+
+  for(let q=0;q<quarters;q++){
+    const onCnt = (gk?1:0) + plan[q].on.length;
+    html += `<div class="rotaQ"><h4><span>${q+1}쿼터 (출전 ${onCnt}명)</span>`
+         +  `<button data-q="${q}" class="rotaPlaceBtn">▶ 전술보드 배치</button></h4>`;
+    html += `<div class="qline">${gk?'🧤 '+gk+' / ':''}${plan[q].on.join(', ')||'-'}</div>`;
+    if(plan[q].off.length) html += `<div class="qline qoff">휴식: ${plan[q].off.join(', ')}</div>`;
+    html += '</div>';
+  }
+  box.innerHTML = html;
+  box.querySelectorAll('.rotaPlaceBtn').forEach(b=> b.onclick = ()=> placeQuarterOnBoard(parseInt(b.dataset.q)) );
+}
+
+function placeLineupHome(lineup){
+  const coords = F[document.getElementById('formationSel').value];
+  tokens = tokens.filter(t=>{ if(t.team==='home' && !t.isBall){ t.el.remove(); return false;} return true;});
+  const MINY=.38, MAXY=.93;
+  lineup.forEach((nm,i)=>{
+    if(i>=coords.length) return;
+    const c=coords[i];
+    const y = 0.52 + (c[1]-MINY)/(MAXY-MINY)*(0.95-0.52);
+    makeToken('home', c[0], y, nm, String(i+1), false, i);
+  });
+  applyLabels();
+}
+function placeQuarterOnBoard(q){
+  if(!lastRotation) return;
+  const R = lastRotation;
+  if(activeTab!=='tactics') document.getElementById('tabTactics').click();   // 전술탭으로 전환 먼저
+  const lineup = (R.gk?[R.gk]:[]).concat(R.plan[q].on);   // GK는 항상 0번(골문 위치)
+  for(let i=0;i<STARTERS;i++){
+    if(i<lineup.length){ roster.home[i].name = lineup[i]; roster.home[i].num = String(i+1); }
+    else roster.home[i].name = '';
+  }
+  saveRoster();
+  placeLineupHome(lineup);
+  ensureBall();
+  if(!benchPanel.classList.contains('hidden')) refreshBench();
+  pushHistory();
+  rotaPanel.classList.add('hidden');
+}
+
+/* ---------- 저장소 (브라우저 localStorage — 창 닫아도 유지) ---------- */
+function saveRoster(){
+  try{ localStorage.setItem('tb_roster', JSON.stringify(roster)); }catch(e){}
+}
+function loadRoster(){
+  try{
+    // 1) 파일에 박아넣은 기본 명단(배포본)을 먼저 적용
+    if(EMBEDDED_ROSTER && Array.isArray(EMBEDDED_ROSTER.home) && Array.isArray(EMBEDDED_ROSTER.away)){
+      roster.home = JSON.parse(JSON.stringify(EMBEDDED_ROSTER.home));
+      roster.away = JSON.parse(JSON.stringify(EMBEDDED_ROSTER.away));
+    }
+    // 2) 이 PC에서 직접 수정·저장한 명단이 있으면 그것으로 덮어씀
+    const r = JSON.parse(localStorage.getItem('tb_roster'));
+    if(r && Array.isArray(r.home) && Array.isArray(r.away)){
+      roster.home = r.home; roster.away = r.away;
+    }
+  }catch(e){}
+}
+/* 현재 명단을 HTML 파일 안에 박아넣은 '배포본'을 내려받기 — 이 파일을 남에게 주면 명단이 그대로 들어 있음 */
+function exportRosterFile(){
+  const clone = document.documentElement.cloneNode(true);
+  clone.querySelectorAll('#fieldWrap .token').forEach(e=>e.remove());      // JS가 만든 토큰 제거(원본 상태로)
+  clone.querySelectorAll('#rosterPanel,#benchPanel,#rotaPanel').forEach(p=>p.classList.add('hidden'));
+  let html = '<!DOCTYPE html>\n' + clone.outerHTML;
+  const json = JSON.stringify(roster).replace(/<\/script/gi,'<\\/script');  // 안전 처리
+  html = html.replace(/const EMBEDDED_ROSTER = [\s\S]*?\/\*__EMBEDDED_ROSTER__\*\//,
+                      'const EMBEDDED_ROSTER = ' + json + '; /*__EMBEDDED_ROSTER__*/');
+  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+  const a = document.createElement('a');
+  a.download = '전술보드_명단포함.html';
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  alert('명단이 들어간 배포본(전술보드_명단포함.html)을 저장했습니다.\n이 파일을 전달하면 받는 분도 같은 명단이 보입니다.');
+}
+function getSaves(){ try{ return JSON.parse(localStorage.getItem('tb_saves')||'{}'); }catch(e){ return {}; } }
+function setSaves(o){ try{ localStorage.setItem('tb_saves', JSON.stringify(o)); }catch(e){} }
+
+/* 현재 보드 상태를 객체로 추출 */
+function snapshot(){
+  return {
+    tokens: tokens.map(t=>({team:t.team, x:t.x, y:t.y, num:t.num, label:t.label, isBall:t.isBall, kind:t.kind, idx:t.idx})),
+    strokes: JSON.parse(JSON.stringify(strokes)),
+    homeColor, awayColor,
+    roster: JSON.parse(JSON.stringify(roster))
+  };
+}
+/* 저장된 상태를 보드에 복원 */
+function restore(s, keepHistory){
+  tokens.forEach(t=>t.el.remove()); tokens=[];
+  if(s.homeColor){ document.getElementById('homeColor').value=s.homeColor; setTeamColor('home', s.homeColor); }
+  if(s.awayColor){ document.getElementById('awayColor').value=s.awayColor; setTeamColor('away', s.awayColor); }
+  if(s.roster && s.roster.home && s.roster.away){
+    roster.home = JSON.parse(JSON.stringify(s.roster.home));
+    roster.away = JSON.parse(JSON.stringify(s.roster.away));
+    buildRosterPanel(); saveRoster();
+  }
+  (s.tokens||[]).forEach(d=> makeToken(d.team, d.x, d.y, d.label, d.num, d.isBall, d.idx, d.kind));
+  strokes = JSON.parse(JSON.stringify(s.strokes||[])); selected=null; redrawStrokes();
+  applyLabels(); refreshBench();
+  if(!keepHistory) resetHistory();          // 되돌리기(undo)에서는 기록을 유지
+}
+
+function refreshLoadSelect(){
+  const sel = document.getElementById('loadSel');
+  const saves = getSaves();
+  sel.innerHTML = '<option value="">저장목록…</option>';
+  Object.keys(saves).forEach(n=>{
+    const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o);
+  });
+}
+function saveSituation(){
+  const def = '전술 ' + (Object.keys(getSaves()).length + 1);
+  const name = prompt('저장할 상황의 이름을 입력하세요', def);
+  if(!name) return;
+  const saves = getSaves();
+  saves[name.trim()] = snapshot();
+  setSaves(saves);
+  refreshLoadSelect();
+  document.getElementById('loadSel').value = name.trim();
+  alert('저장되었습니다: ' + name.trim());
+}
+function loadSituation(){
+  const n = document.getElementById('loadSel').value;
+  if(!n){ alert('불러올 저장 항목을 목록에서 먼저 선택하세요.'); return; }
+  const saves = getSaves();
+  if(saves[n]) restore(saves[n]);
+}
+function deleteSituation(){
+  const n = document.getElementById('loadSel').value;
+  if(!n){ alert('삭제할 저장 항목을 목록에서 먼저 선택하세요.'); return; }
+  if(!confirm(`'${n}' 저장을 삭제할까요?`)) return;
+  const saves = getSaves(); delete saves[n]; setSaves(saves);
+  refreshLoadSelect();
+}
+document.getElementById('saveSitBtn').onclick = saveSituation;
+document.getElementById('loadBtn').onclick = loadSituation;
+document.getElementById('delBtn').onclick = deleteSituation;
+document.getElementById('rosterSaveBtn').onclick = ()=>{ saveRoster(); alert('명단이 저장되었습니다.'); };
+document.getElementById('rosterExportBtn').onclick = exportRosterFile;
+
+/* ---------- 팀 색상 변경 (기본 살구색/검정, 수정 가능) ---------- */
+function setTeamColor(team, color){
+  if(team==='home'){ homeColor=color; document.documentElement.style.setProperty('--home', color); }
+  else{ awayColor=color; document.documentElement.style.setProperty('--away', color); }
+}
+document.getElementById('homeColor').oninput = e=> setTeamColor('home', e.target.value);
+document.getElementById('awayColor').oninput = e=> setTeamColor('away', e.target.value);
+
+/* ---------- 버튼 연결 ---------- */
+function applyFormation(){
+  placeFormation(document.getElementById('teamSel').value,
+                 document.getElementById('formationSel').value);
+  refreshBench(); pushHistory();
+}
+document.getElementById('applyBtn').onclick=applyFormation;
+// 포메이션을 고르면 즉시 적용 (배치 버튼을 누르지 않아도 됨)
+document.getElementById('formationSel').onchange=applyFormation;
+/* ---------- 되돌리기 / 다시실행 (그리기·선수이동·교체·삭제·지우기 모두 적용) ---------- */
+// 기록 단위 = 보드 전체 스냅샷(선수 위치·선·색·명단)
+function pushHistory(){
+  history = history.slice(0, histIndex+1);
+  history.push(snapshot());
+  if(history.length>100) history.shift();
+  histIndex = history.length-1;
+}
+function resetHistory(){ history=[snapshot()]; histIndex=0; }
+function undo(){
+  if(histIndex<=0) return;
+  histIndex--;
+  restore(history[histIndex], true);
+}
+function redo(){
+  if(histIndex>=history.length-1) return;
+  histIndex++;
+  restore(history[histIndex], true);
+}
+document.getElementById('undoBtn').onclick=undo;
+document.getElementById('redoBtn').onclick=redo;
+document.getElementById('delStrokeBtn').onclick=deleteSelected;
+// 단축키: Ctrl+Z 되돌리기 / Ctrl+Y·Ctrl+Shift+Z 다시실행 / Delete·Backspace 선택삭제
+window.addEventListener('keydown', e=>{
+  const el = e.target, tag = (el.tagName||'').toLowerCase();
+  if(tag==='input' || tag==='textarea' || el.isContentEditable) return;   // 텍스트 입력 중에만 제외(select는 허용)
+  const mod = e.ctrlKey||e.metaKey;
+  if(!mod) {
+    if((e.key==='Delete' || e.key==='Backspace') && selected){ e.preventDefault(); deleteSelected(); }
+    return;
+  }
+  // IME(한글 입력)·레이아웃과 무관하도록 물리적 키 위치(e.code)로 비교
+  const isZ = e.code==='KeyZ' || e.key==='z' || e.key==='Z';
+  const isY = e.code==='KeyY' || e.key==='y' || e.key==='Y';
+  if(isZ && !e.shiftKey){ e.preventDefault(); undo(); }
+  else if(isY || (isZ && e.shiftKey)){ e.preventDefault(); redo(); }
+});
+document.getElementById('addText').onclick=()=>{
+  const txt = prompt('필드에 표시할 글자를 입력하세요', '설명');
+  if(!txt) return;
+  makeToken('none', 0.5, 0.5, txt, '', false, -1, 'text');
+  pushHistory();
+};
+document.getElementById('clearDraw').onclick=()=>{ strokes=[]; selected=null; redrawStrokes(); pushHistory(); };
+document.getElementById('toggleLbl').onclick=()=>{ showLabels=!showLabels; applyLabels(); };
+document.getElementById('saveBtn').onclick=saveImage;
+document.getElementById('resetBtn').onclick=()=>{
+  tokens.forEach(t=>t.el.remove()); tokens=[]; strokes=[]; selected=null; redrawStrokes();
+  document.getElementById('caption').classList.add('hidden');
+  if(activeTab==='tactics'){
+    placeFormation('home','442'); placeFormation('away','442'); ensureBall();
+  }
+  resetHistory(); refreshBench();
+};
+
+/* ---------- 탭 전환 (전술 / 훈련) ---------- */
+const scenes = { tactics:{tokens:[],strokes:[]}, training:{tokens:[],strokes:[]} };
+function serializeTokens(){
+  return tokens.map(t=>({team:t.team, x:t.x, y:t.y, num:t.num, label:t.label, isBall:t.isBall, kind:t.kind, idx:t.idx}));
+}
+function rebuildTokens(arr){
+  (arr||[]).forEach(d=> makeToken(d.team, d.x, d.y, d.label, d.num, d.isBall, d.idx, d.kind));
+}
+function switchTab(tab){
+  if(tab===activeTab) return;
+  // 현재 탭 상태 보관
+  scenes[activeTab].tokens = serializeTokens();
+  scenes[activeTab].strokes = strokes;
+  // 화면 비우고 대상 탭 로드
+  tokens.forEach(t=>t.el.remove()); tokens=[];
+  activeTab = tab;
+  strokes = scenes[tab].strokes || []; selected = null;
+  // 훈련=반코트 가로 / 전술=세로 풀코트
+  wrap.classList.toggle('training', tab==='training');
+  document.getElementById('caption').classList.add('hidden');   // 설명 캡션 숨김
+  fit();                                   // 캔버스 크기·필드 다시 그림
+  rebuildTokens(scenes[tab].tokens);
+  redrawStrokes(); applyLabels(); resetHistory();
+  // 도구/탭 표시 전환
+  document.getElementById('tacticsTools').style.display = tab==='tactics' ? '' : 'none';
+  document.getElementById('trainingTools').style.display = tab==='training' ? '' : 'none';
+  document.getElementById('tabTactics').classList.toggle('active', tab==='tactics');
+  document.getElementById('tabTraining').classList.toggle('active', tab==='training');
+  if(tab==='training') benchPanel.classList.add('hidden');   // 후보 벤치는 전술탭 전용
+  else refreshBench();
+}
+document.getElementById('tabTactics').onclick = ()=>switchTab('tactics');
+document.getElementById('tabTraining').onclick = ()=>switchTab('training');
+
+/* ---------- 훈련탭: 선수/공/고깔 추가 ---------- */
+function addAt(){ // 살짝 어긋나게 배치(겹침 방지)
+  const k = addCounter % 8;
+  return { x: 0.40 + (k%4)*0.06, y: 0.42 + Math.floor(k/4)*0.10 };
+}
+document.getElementById('addHome').onclick = ()=>{ addCounter++; const p=addAt(); makeToken('home', p.x, p.y, '', String(addCounter), false, -1, 'player'); pushHistory(); };
+document.getElementById('addAway').onclick = ()=>{ addCounter++; const p=addAt(); makeToken('away', p.x, p.y, '', String(addCounter), false, -1, 'player'); pushHistory(); };
+document.getElementById('addBall').onclick = ()=>{ addCounter++; const p=addAt(); makeToken('none', p.x, p.y, '', '', true, -1, 'ball'); pushHistory(); };
+document.getElementById('addCone').onclick = ()=>{ addCounter++; const p=addAt(); makeToken('none', p.x, p.y, '', '', false, -1, 'cone'); pushHistory(); };
+
+/* ---------- 예시 도안(프리셋) ----------
+   tab: 'tactics'(세로 풀코트) | 'training'(가로 반코트)
+   tokens: {team, x, y, num, label, kind:'player'|'ball'|'cone'}
+   strokes: {color, type:'arrow'|'line'|'dashed'|'dashedArrow', pts:[{x,y}...]}
+   ※ 새 상황/훈련을 말로 설명해주시면 여기에 항목을 추가해 드립니다. */
+const PRESETS = {
+  '훈련: 패스 삼각형(론도)': {
+    tab:'training',
+    tokens:[
+      {team:'home', x:0.34, y:0.30, num:'1', kind:'player'},
+      {team:'home', x:0.55, y:0.74, num:'2', kind:'player'},
+      {team:'home', x:0.73, y:0.34, num:'3', kind:'player'},
+      {team:'away', x:0.55, y:0.50, num:'X', kind:'player'},   // 가운데 수비
+      {team:'none', x:0.37, y:0.33, kind:'ball'},
+      {team:'none', x:0.30, y:0.18, kind:'cone'},
+      {team:'none', x:0.78, y:0.22, kind:'cone'},
+      {team:'none', x:0.55, y:0.85, kind:'cone'},
+    ],
+    strokes:[
+      {color:'#f4d35e', type:'arrow', pts:[{x:0.37,y:0.33},{x:0.53,y:0.70}]},
+      {color:'#f4d35e', type:'arrow', pts:[{x:0.57,y:0.72},{x:0.71,y:0.38}]},
+      {color:'#f4d35e', type:'arrow', pts:[{x:0.71,y:0.34},{x:0.39,y:0.31}]},
+    ]
+  },
+
+  /* ===== 스트라이커(9번) 훈련 3종 — 훈련탭 반코트, 골대=왼쪽, 공격방향 ← ===== */
+  '훈련: ① 채널 침투 + 컷백 마무리': {
+    tab:'training',
+    title:'채널 침투 + 컷백 마무리',
+    desc:'⑨는 가운데서 대기 → 측면(⑦)이 돌파하는 <b>그 순간</b> 센터백–풀백 사이(고깔)로 <b>대각 침투</b> → 라인보다 <b>반 발 뒤(컷백 존)</b>로 빠져 첫 터치 없이 <b>원터치 마무리</b>',
+    tokens:[
+      {team:'home', x:0.70, y:0.50, num:'6', label:'전개', kind:'player'},
+      {team:'home', x:0.52, y:0.22, num:'7', label:'측면', kind:'player'},
+      {team:'home', x:0.52, y:0.56, num:'9', label:'ST', kind:'player'},
+      {team:'away', x:0.36, y:0.46, num:'4', label:'CB', kind:'player'},
+      {team:'away', x:0.06, y:0.50, num:'1', label:'GK', kind:'player'},
+      {team:'none', x:0.67, y:0.50, kind:'ball'},
+      {team:'none', x:0.40, y:0.34, kind:'cone'},
+      {team:'none', x:0.40, y:0.44, kind:'cone'},
+    ],
+    strokes:[
+      {color:'#f4d35e', type:'arrow',       pts:[{x:0.66,y:0.49},{x:0.53,y:0.24}]},                 // ⑥→⑦ 전개
+      {color:'#f4d35e', type:'dashedArrow', pts:[{x:0.51,y:0.22},{x:0.20,y:0.20}]},                 // ⑦ 바이라인 돌파
+      {color:'#3ad07e', type:'dashedArrow', pts:[{x:0.52,y:0.55},{x:0.40,y:0.42},{x:0.25,y:0.52}]}, // ⑨ 채널 침투(고깔 사이)→스팟 뒤
+      {color:'#f4d35e', type:'arrow',       pts:[{x:0.20,y:0.22},{x:0.25,y:0.49}]},                 // 컷백
+      {color:'#ff6b6b', type:'arrow',       pts:[{x:0.24,y:0.50},{x:0.07,y:0.47}]},                 // 슛
+    ]
+  },
+  '훈련: ② 드롭→레이오프→재침투 마무리': {
+    tab:'training',
+    title:'드롭 → 레이오프 → 재침투 (give-and-go)',
+    desc:'⑨ 내려와 등지고 받기 → ⑧에게 <b>한 번에 레이오프</b> → 멈추지 말고 곧바로 <b>등 뒤로 재침투</b> → 스루패스 받아 마무리. 핵심은 "내주고 멈추지 않기"',
+    tokens:[
+      {team:'home', x:0.76, y:0.50, num:'6', label:'전개', kind:'player'},
+      {team:'home', x:0.46, y:0.50, num:'9', label:'ST', kind:'player'},
+      {team:'home', x:0.56, y:0.66, num:'8', label:'지원', kind:'player'},
+      {team:'away', x:0.39, y:0.50, num:'4', label:'CB', kind:'player'},
+      {team:'away', x:0.06, y:0.50, num:'1', label:'GK', kind:'player'},
+      {team:'none', x:0.73, y:0.50, kind:'ball'},
+    ],
+    strokes:[
+      {color:'#f4d35e', type:'arrow',       pts:[{x:0.72,y:0.50},{x:0.49,y:0.50}]},                 // ⑥→⑨ 발밑
+      {color:'#f4d35e', type:'arrow',       pts:[{x:0.46,y:0.52},{x:0.55,y:0.63}]},                 // ⑨ 레이오프→⑧
+      {color:'#3ad07e', type:'dashedArrow', pts:[{x:0.45,y:0.49},{x:0.34,y:0.40},{x:0.23,y:0.43}]}, // ⑨ 등 뒤 재침투
+      {color:'#f4d35e', type:'arrow',       pts:[{x:0.55,y:0.62},{x:0.25,y:0.43}]},                 // ⑧ 스루패스
+      {color:'#ff6b6b', type:'arrow',       pts:[{x:0.23,y:0.44},{x:0.07,y:0.48}]},                 // 슛
+    ]
+  },
+  '훈련: ③ 전방 압박 — 커버 섀도': {
+    tab:'training',
+    title:'전방 압박: 커버 섀도 (first defender)',
+    desc:'GK→CB로 가는 <b>그 순간</b> 곡선으로 달려 ⑥번을 등 뒤 <b>그림자에 가두고</b>(흰 점선=차단된 패스길) 한쪽만 열어 압박 → 탈취하면 그대로 마무리. "나갈 거면 100%, 6번 레인부터 닫기"',
+    tokens:[
+      {team:'away', x:0.07, y:0.50, num:'1', label:'GK', kind:'player'},
+      {team:'away', x:0.20, y:0.34, num:'4', label:'CB', kind:'player'},
+      {team:'away', x:0.20, y:0.66, num:'5', label:'CB', kind:'player'},
+      {team:'away', x:0.36, y:0.50, num:'6', label:'6번', kind:'player'},
+      {team:'home', x:0.46, y:0.48, num:'9', label:'ST', kind:'player'},
+      {team:'none', x:0.09, y:0.50, kind:'ball'},
+    ],
+    strokes:[
+      {color:'#f4d35e', type:'arrow',       pts:[{x:0.11,y:0.49},{x:0.20,y:0.36}]},                 // GK→CB
+      {color:'#3ad07e', type:'dashedArrow', pts:[{x:0.46,y:0.48},{x:0.36,y:0.40},{x:0.27,y:0.38}]}, // ⑨ 곡선 압박(섀도 유지)
+      {color:'#ffffff', type:'dashed',      pts:[{x:0.21,y:0.36},{x:0.35,y:0.49}]},                 // 차단된 패스길(CB→6번)
+      {color:'#ff6b6b', type:'dashedArrow', pts:[{x:0.24,y:0.39},{x:0.08,y:0.47}]},                 // 탈취 후 마무리
+    ]
+  },
+
+  '전술: 우측 측면 역습': {
+    tab:'tactics',
+    tokens:[
+      {team:'home', x:0.50, y:0.92, num:'1', label:'GK', kind:'player'},
+      {team:'home', x:0.30, y:0.74, num:'4', kind:'player'},
+      {team:'home', x:0.78, y:0.66, num:'2', label:'RB', kind:'player'},
+      {team:'home', x:0.55, y:0.58, num:'8', kind:'player'},
+      {team:'home', x:0.82, y:0.40, num:'7', label:'RW', kind:'player'},
+      {team:'home', x:0.45, y:0.34, num:'9', label:'ST', kind:'player'},
+      {team:'away', x:0.40, y:0.30, num:'5', kind:'player'},
+      {team:'away', x:0.60, y:0.28, num:'6', kind:'player'},
+      {team:'none', x:0.50, y:0.90, kind:'ball'},
+    ],
+    strokes:[
+      {color:'#f4d35e', type:'arrow', pts:[{x:0.50,y:0.90},{x:0.77,y:0.66}]},   // GK→RB 전개
+      {color:'#f4d35e', type:'arrow', pts:[{x:0.79,y:0.64},{x:0.82,y:0.42}]},   // RB→RW 전진
+      {color:'#3ad07e', type:'dashedArrow', pts:[{x:0.46,y:0.34},{x:0.62,y:0.20}]}, // ST 침투
+      {color:'#f4d35e', type:'arrow', pts:[{x:0.82,y:0.41},{x:0.60,y:0.22}]},   // RW→ST 크로스
+    ]
+  },
+
+  /* ===== 오프사이드 설명 (검정=수비, 살구=공격, 공격 방향 ↑) ===== */
+  '오프사이드 ① 트랩(옳은 수비)': {
+    tab:'tactics', hideNumbers:true,
+    title:'오프사이드 트랩',
+    desc:'수비 4명이 킥 직전 동시에 <b>라인을 올려</b> 공격수를 라인 뒤(골 쪽)에 남긴다 → 명백한 오프사이드',
+    tokens:[
+      {team:'home', x:0.50, y:0.07, num:'1', kind:'player'},
+      {team:'home', x:0.24, y:0.46, num:'2', kind:'player'},
+      {team:'home', x:0.42, y:0.46, num:'3', kind:'player'},
+      {team:'home', x:0.58, y:0.46, num:'4', kind:'player'},
+      {team:'home', x:0.76, y:0.46, num:'5', kind:'player'},
+      {team:'away', x:0.50, y:0.40, num:'9', kind:'player'},
+      {team:'away', x:0.50, y:0.66, num:'10', kind:'player'},
+      {team:'none', x:0.50, y:0.69, kind:'ball'},
+    ],
+    strokes:[
+      {color:'#ffffff', type:'dashed', pts:[{x:0.06,y:0.46},{x:0.94,y:0.46}]},      // 라인(기준)
+      {color:'#3ad07e', type:'arrow', pts:[{x:0.24,y:0.35},{x:0.24,y:0.445}]},      // 전진(옳음)
+      {color:'#3ad07e', type:'arrow', pts:[{x:0.42,y:0.35},{x:0.42,y:0.445}]},
+      {color:'#3ad07e', type:'arrow', pts:[{x:0.58,y:0.35},{x:0.58,y:0.445}]},
+      {color:'#3ad07e', type:'arrow', pts:[{x:0.76,y:0.35},{x:0.76,y:0.445}]},
+      {color:'#ffffff', type:'arrow', pts:[{x:0.50,y:0.67},{x:0.50,y:0.435}]},      // 스루패스(이동)
+    ]
+  },
+  '오프사이드 ② 동일선상(틀린 수비)': {
+    tab:'tactics', hideNumbers:true,
+    title:'동일선상은 위험',
+    desc:'라인을 안 올리고 <b>같은 선</b>에서 손만 들면 온사이드 → 뒷공간으로 침투당해 실점',
+    tokens:[
+      {team:'home', x:0.50, y:0.07, num:'1', kind:'player'},
+      {team:'home', x:0.24, y:0.42, num:'2', kind:'player'},
+      {team:'home', x:0.42, y:0.42, num:'3', kind:'player'},
+      {team:'home', x:0.58, y:0.42, num:'4', kind:'player'},
+      {team:'home', x:0.76, y:0.42, num:'5', kind:'player'},
+      {team:'away', x:0.50, y:0.42, num:'9', kind:'player'},
+      {team:'away', x:0.50, y:0.66, num:'10', kind:'player'},
+      {team:'none', x:0.50, y:0.69, kind:'ball'},
+    ],
+    strokes:[
+      {color:'#ffffff', type:'dashed', pts:[{x:0.06,y:0.42},{x:0.94,y:0.42}]},      // 동일 라인(기준)
+      {color:'#ffffff', type:'arrow', pts:[{x:0.50,y:0.67},{x:0.50,y:0.22}]},       // 스루패스(이동)
+      {color:'#ff6b6b', type:'dashedArrow', pts:[{x:0.52,y:0.42},{x:0.52,y:0.24}]}, // 침투(틀림/위험)
+    ]
+  },
+  '오프사이드 ③ 일반 수비(옳은 수비)': {
+    tab:'tactics', hideNumbers:true,
+    title:'일반 수비',
+    desc:'침투에 맞춰 한 명이 <b>미리 내려가</b> 따라붙고, 나머지가 그 선수에 <b>라인을 맞춘다</b>',
+    tokens:[
+      {team:'home', x:0.50, y:0.07, num:'1', kind:'player'},
+      {team:'home', x:0.58, y:0.26, num:'4', kind:'player'},
+      {team:'home', x:0.26, y:0.31, num:'2', kind:'player'},
+      {team:'home', x:0.42, y:0.31, num:'3', kind:'player'},
+      {team:'home', x:0.76, y:0.31, num:'5', kind:'player'},
+      {team:'away', x:0.58, y:0.40, num:'9', kind:'player'},
+      {team:'away', x:0.50, y:0.62, num:'10', kind:'player'},
+      {team:'none', x:0.50, y:0.64, kind:'ball'},
+    ],
+    strokes:[
+      {color:'#ffffff', type:'dashedArrow', pts:[{x:0.58,y:0.40},{x:0.58,y:0.21}]}, // 공격수 침투(이동)
+      {color:'#3ad07e', type:'arrow', pts:[{x:0.58,y:0.355},{x:0.58,y:0.265}]},     // 커버 내려섬(옳음)
+      {color:'#3ad07e', type:'arrow', pts:[{x:0.26,y:0.355},{x:0.26,y:0.315}]},
+      {color:'#3ad07e', type:'arrow', pts:[{x:0.42,y:0.355},{x:0.42,y:0.315}]},
+      {color:'#3ad07e', type:'arrow', pts:[{x:0.76,y:0.355},{x:0.76,y:0.315}]},
+      {color:'#ffffff', type:'arrow', pts:[{x:0.55,y:0.625},{x:0.58,y:0.30}]},      // 스루패스(이동)
+    ]
+  }
+};
+function refreshPresetSelect(){
+  const sel = document.getElementById('presetSel');
+  sel.innerHTML = '<option value="">예시 도안…</option>';
+  Object.keys(PRESETS).forEach(n=>{ const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); });
+}
+function loadPreset(name){
+  const p = PRESETS[name]; if(!p) return;
+  switchTab(p.tab || 'tactics');
+  tokens.forEach(t=>t.el.remove()); tokens=[];
+  rebuildTokens((p.tokens||[]).map(d=>({team:d.team||'none', x:d.x, y:d.y,
+      num:(p.hideNumbers ? '' : (d.num||'')), label:d.label||'',
+      isBall:d.kind==='ball', kind:d.kind||'player', idx:-1})));
+  strokes = JSON.parse(JSON.stringify(p.strokes||[])); selected=null;
+  redrawStrokes(); applyLabels(); resetHistory();
+  const cap = document.getElementById('caption');
+  if(p.title || p.desc){
+    cap.innerHTML = (p.title?`<b>${p.title}</b>`:'') + (p.desc?`<br>${p.desc}`:'');
+    cap.classList.remove('hidden');
+  } else { cap.classList.add('hidden'); }
+}
+document.getElementById('presetBtn').onclick = ()=>{
+  const n = document.getElementById('presetSel').value;
+  if(!n){ alert('적용할 예시 도안을 목록에서 선택하세요.'); return; }
+  loadPreset(n);
+};
+
+/* ---------- 시작 ---------- */
+loadRoster();                 // 저장해둔 명단 복원
+fit();
+placeFormation('home','442');
+placeFormation('away','442');
+ensureBall();
+buildRosterPanel();
+refreshBench();               // 후보 벤치 목록 채우기
+refreshLoadSelect();          // 저장된 상황 목록 채우기
+refreshPresetSelect();        // 예시 도안 목록 채우기
+resetHistory();               // 되돌리기 기록 초기화
+</script>
+<script>
+/* 오프라인 작동: 처음 1회 접속 후 인터넷 없이 사용 가능 */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
+</script>
+</body>
+</html>
