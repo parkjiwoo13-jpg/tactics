@@ -1095,7 +1095,7 @@ document.getElementById('rotaPickAdd').onclick = ()=>{
 };
 
 // 균등 분배: 입력순(=도착순) 우선 + 지각자(뒤쪽 N쿼터만) 반영 + 적게 뛴 사람 우선
-function computeRotation(members, quarters, fieldCount, gkName){
+function computeRotation(members, quarters, fieldCount, gkName, shuffle){
   const gkOn = gkName ? 1 : 0;
   const outSlots = Math.max(0, fieldCount - gkOn);
   const out = members.filter(m=>m.name!==gkName).map((m,i)=>({
@@ -1107,16 +1107,20 @@ function computeRotation(members, quarters, fieldCount, gkName){
   const counts = {}; members.forEach(m=> counts[m.name]=0);
   if(gkName) counts[gkName] = quarters;
   const plays = {}; out.forEach(m=> plays[m.name]=0);
+  const lastQ = {}; out.forEach(m=> lastQ[m.name]=-1);          // 마지막으로 뛴 쿼터(쉬는 간격 벌리기)
+  const rnd   = {}; out.forEach(m=> rnd[m.name]=Math.random()); // '다시 짜기'용 무작위 키
+  const tie   = (a,b)=> shuffle ? (rnd[a.name]-rnd[b.name]) : (a.idx-b.idx);
   const plan = [];
   for(let q=0;q<quarters;q++){
     const eligible = out.filter(m=> q >= firstQ(m));      // 그 쿼터에 도착해 있는 사람
     eligible.sort((a,b)=>
-      (plays[a.name]-plays[b.name]) ||                   // 1) 적게 뛴 사람 먼저
+      (plays[a.name]-plays[b.name]) ||                   // 1) 적게 뛴 사람 먼저(전체 균등)
       (remain(a,q)-remain(b,q))   ||                     // 2) 남은 가능 쿼터 적은(지각) 사람 먼저
-      (a.idx-b.idx)                                      // 3) 먼저 온(입력순) 사람 먼저
+      (lastQ[a.name]-lastQ[b.name]) ||                   // 3) 오래 쉰 사람 먼저 → 연속출전 방지(1Q→3Q, 2Q→4Q)
+      tie(a,b)                                           // 4) 도착순 또는 무작위
     );
     const on = eligible.slice(0, outSlots).map(m=>m.name);
-    on.forEach(nm=>{ plays[nm]++; counts[nm]++; });
+    on.forEach(nm=>{ plays[nm]++; counts[nm]++; lastQ[nm]=q; });
     const onSet = new Set(on);
     const off = eligible.filter(m=>!onSet.has(m.name)).map(m=>m.name);   // 도착했지만 휴식
     plan.push({on, off});
@@ -1124,16 +1128,17 @@ function computeRotation(members, quarters, fieldCount, gkName){
   return {quarters, fieldCount, gk:gkName, outSlots, members:out, plan, counts};
 }
 
-document.getElementById('rotaCalc').onclick = ()=>{
+function runRotation(shuffle){
   const members = rotaParseMembers(), box = document.getElementById('rotaResult');
   if(members.length===0){ box.innerHTML = '<div class="rotaWarn">먼저 회원 명단을 입력하세요.</div>'; return; }
   const quarters  = Math.max(1, Math.min(12, parseInt(document.getElementById('rotaQuarters').value)||4));
   const fieldCount= Math.max(1, Math.min(11, parseInt(document.getElementById('rotaField').value)||11));
   let gkName = document.getElementById('rotaGk').value;
   if(gkName && !members.some(m=>m.name===gkName)) gkName = '';
-  lastRotation = computeRotation(members, quarters, fieldCount, gkName);
+  lastRotation = computeRotation(members, quarters, fieldCount, gkName, shuffle);
   renderRotation(box, lastRotation);
-};
+}
+document.getElementById('rotaCalc').onclick = ()=> runRotation(false);
 
 function renderRotation(box, R){
   const {quarters, plan, counts, gk, members, outSlots} = R;
@@ -1148,6 +1153,8 @@ function renderRotation(box, R){
   if(lateList.length) note.push(`지각/제한: ${lateList.map(m=>m.name+' '+m.cap+'Q').join(', ')}`);
   html += `<div class="rotaNote">${note.join(' · ')}</div>`;
   html += `<div class="rotaNote">○ 출전 · 휴 휴식 · · 미도착(지각)</div>`;
+  html += `<div class="rotaNote">🔁 2번 이상 뛰는 선수는 연속 출전을 피해 간격을 둡니다 (예: 1Q→3Q, 2Q→4Q)</div>`;
+  html += `<button id="rotaShuffle" class="rotaWide" style="margin:6px 0;padding:9px;background:#214a39;border:1px solid var(--accent);color:var(--accent);font-weight:700;">🎲 랜덤으로 다시 짜기</button>`;
 
   html += '<div class="rotaTableWrap"><table class="rotaTable"><thead><tr><th>회원</th>';
   for(let q=0;q<quarters;q++) html += `<th>${q+1}Q</th>`;
@@ -1178,6 +1185,7 @@ function renderRotation(box, R){
   }
   box.innerHTML = html;
   box.querySelectorAll('.rotaPlaceBtn').forEach(b=> b.onclick = ()=> placeQuarterOnBoard(parseInt(b.dataset.q)) );
+  const sh = box.querySelector('#rotaShuffle'); if(sh) sh.onclick = ()=> runRotation(true);
 }
 
 function placeLineupHome(lineup){
