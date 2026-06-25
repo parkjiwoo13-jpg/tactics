@@ -168,20 +168,33 @@
   .rotaPickItem:hover{background:#13302a;}
   .rotaPickItem input{width:20px; height:20px; accent-color:var(--accent);}
 
+  .toolToggle{display:none;}
   @media (max-width:560px){
-    header h1{width:100%; margin-bottom:4px;}
+    header{padding:6px 8px; gap:6px; align-items:center;}
+    header h1{width:auto; margin:0 4px 0 0; font-size:15px;}
     button,select{padding:7px 9px; font-size:13px;}
+    .toolbar{gap:5px; width:100%;}
+    /* 폰에서 도구 막대가 화면을 다 먹지 않도록 높이 제한 + 스크롤 */
+    header .toolbar{max-height:36vh; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-right:2px;}
+    header.collapsed .toolbar{display:none;}   /* 접힘: 경기장을 크게 */
+    /* 도구 접기/펼치기 버튼 (폰 전용) */
+    .toolToggle{display:inline-block; margin-left:auto; white-space:nowrap;
+      background:var(--accent); color:#05231a; font-weight:700; border-color:var(--accent);}
+    #stage{padding:4px;}
+    footer{padding:4px 8px;}
+    .hint{font-size:11px; line-height:1.3;}
   }
 </style>
 </head>
 <body>
 <div id="app">
-  <header>
+  <header class="collapsed">
     <h1>⚽ 축구 전술 보드</h1>
     <div class="tabs">
       <button id="tabTactics" class="tab active">⚽ 전술</button>
       <button id="tabTraining" class="tab">🏃 훈련</button>
     </div>
+    <button id="toolToggle" class="toolToggle" type="button">🛠 도구 ▾</button>
     <div class="toolbar">
       <span id="tacticsTools" class="toolgrp">
         <label style="font-size:13px;">포메이션
@@ -390,6 +403,20 @@ function fit(){
   redrawStrokes();
 }
 window.addEventListener('resize', fit);
+
+/* ---------- 폰: 도구 막대 접기/펼치기 ---------- */
+(function(){
+  const tt = document.getElementById('toolToggle');
+  const hdr = document.querySelector('header');
+  if(tt && hdr){
+    tt.addEventListener('click', function(){
+      const collapsed = hdr.classList.toggle('collapsed');
+      tt.textContent = collapsed ? '🛠 도구 ▾' : '🛠 도구 ▴';
+      fit();
+    });
+  }
+})();
+window.addEventListener('orientationchange', function(){ setTimeout(fit, 300); });
 
 /* ---------- 잔디 + 라인 그리기 ---------- */
 function drawPitch(ctx,w,h){
