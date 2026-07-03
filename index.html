@@ -332,8 +332,8 @@
     <div class="rotaBody">
       <div class="rotaSetup">
         <label class="rotaLbl">회원 명단 <span class="rotaMini">(한 줄에 한 명, 먼저 온 순서대로)</span></label>
-        <textarea id="rotaNames" rows="7" placeholder="홍길동&#10;김철수&#10;이영희&#10;박지성 2   ← 지각, 2쿼터만(뒤쪽)&#10;최영 지각   ← 2쿼터만"></textarea>
-        <div class="rotaMini">• 위에 입력한 순서 = 도착 순서 → 먼저 온 사람이 1쿼터부터 우선 출전<br>• 지각자는 이름 뒤에 <b>출전할 쿼터 수</b>를 쓰면 뒤쪽 쿼터로 배정 (예: <b>박지성 2</b> 또는 <b>박지성 지각</b>)</div>
+        <textarea id="rotaNames" rows="7" placeholder="홍길동&#10;김철수&#10;용병1 3   ← 3쿼터만 출전(쉬는 쿼터는 랜덤)&#10;박지성 지각   ← 늦게 도착(뒤쪽 쿼터부터)&#10;최영 지각 2   ← 지각 + 2쿼터만"></textarea>
+        <div class="rotaMini">• 위에 입력한 순서 = 도착 순서 → 먼저 온 사람이 1쿼터부터 우선 출전<br>• 이름 뒤에 <b>숫자</b>를 쓰면 <b>그 쿼터 수만큼만 출전</b>하고 <b>쉬는 쿼터는 매번 랜덤</b> (예: <b>용병1 3</b>)<br>• <b>지각</b>이라고 쓰면 늦게 온 사람 → <b>뒤쪽 쿼터부터</b> 배정 (예: <b>박지성 지각</b>, <b>최영 지각 2</b>)</div>
         <button id="rotaFromRoster" class="rotaWide">📋 홈 명단에서 골라 가져오기</button>
         <div id="rotaPickWrap" class="hidden">
           <div class="rotaPickHead">
@@ -1020,19 +1020,25 @@ const rotaPanel = document.getElementById('rotaPanel');
 document.getElementById('rotaBtn').onclick = ()=>{ populateRotaGk(); rotaPanel.classList.toggle('hidden'); };
 document.getElementById('rotaClose').onclick = ()=> rotaPanel.classList.add('hidden');
 
-// 한 줄 = 한 명. 이름 뒤 숫자 = 출전 쿼터 수(지각자는 뒤쪽 쿼터). "지각" 키워드 = 2쿼터.
+// 한 줄 = 한 명.
+//  · 이름 뒤 숫자 = 출전할 쿼터 수(쉬는 쿼터는 랜덤 분산)   예) "용병1 3"
+//  · "지각" 키워드 = 늦게 도착 → 뒤쪽 쿼터부터. 숫자 없으면 기본 2쿼터.  예) "박지성 지각", "최영 지각 2"
 function rotaParseMembers(){
   const seen = new Set(), out = [];
   document.getElementById('rotaNames').value.split('\n').forEach(line=>{
     let s = line.trim(); if(!s) return;
-    let cap = null;
+    let cap = null, late = false;
+    // 1) '지각/늦게' 키워드 제거 → late 플래그(뒤쪽 쿼터 제한)
+    if(/(지각|늦게|늦음|late)/i.test(s)){
+      late = true;
+      s = s.replace(/[\s,]*(지각|늦게|늦음|late)[\s,]*/ig,' ').trim();
+    }
+    // 2) 이름 뒤 숫자 = 출전 쿼터 수
     const m = s.match(/^(.*?)[\s,]+(\d+)\s*$/);
     if(m){ s = m[1].trim(); cap = parseInt(m[2]); }
-    else if(/(지각|늦게|늦음|late)\s*$/i.test(s)){
-      s = s.replace(/[\s,]*(지각|늦게|늦음|late)\s*$/i,'').trim(); cap = 2;
-    }
+    else if(late){ cap = 2; }                // '지각'만 있고 숫자 없으면 기본 2쿼터
     if(!s || seen.has(s)) return;            // 빈 줄·중복 제거(처음 것 유지)
-    seen.add(s); out.push({name:s, cap});
+    seen.add(s); out.push({name:s, cap, late});
   });
   return out;
 }
@@ -1056,7 +1062,11 @@ function buildRotaPick(){
   const list = document.getElementById('rotaPickList');
   const have = new Set(rotaGetNames());
   const names = [], seen = new Set();
-  roster.home.forEach(p=>{ const nm=(p.name||'').trim(); if(nm && !seen.has(nm)){ seen.add(nm); names.push(nm); } });
+  // 현재 명단 + 파일에 박아넣은 기본 회원명단(EMBEDDED)을 합쳐서 전체 회원이 항상 나오게 함
+  // (로테이션 배치 등으로 roster.home 일부가 비어도 회원 전체를 골라올 수 있도록)
+  const addFrom = arr => { if(Array.isArray(arr)) arr.forEach(p=>{ const nm=((p&&p.name)||'').trim(); if(nm && !seen.has(nm)){ seen.add(nm); names.push(nm); } }); };
+  addFrom(roster.home);
+  if(typeof EMBEDDED_ROSTER!=='undefined' && EMBEDDED_ROSTER) addFrom(EMBEDDED_ROSTER.home);
   document.getElementById('rotaPickAll').checked = false;
   if(names.length===0){
     list.innerHTML =
@@ -1094,35 +1104,57 @@ document.getElementById('rotaPickAdd').onclick = ()=>{
   rotaPickWrap.classList.add('hidden');
 };
 
-// 균등 분배: 입력순(=도착순) 우선 + 지각자(뒤쪽 N쿼터만) 반영 + 적게 뛴 사람 우선
+// 출전제한/지각 선수가 '뛸 쿼터'를 미리 뽑는다.
+//  · 지각(late): 뒤쪽 cap개 쿼터로 고정
+//  · 그 외 출전제한: 랜덤으로 cap개 쿼터 선택 → 쉬는 쿼터가 매번 달라짐(특정 쿼터에 고정 안 됨)
+function pickPlayQuarters(cap, quarters, late){
+  if(cap>=quarters) return null;                       // 제한 없음(전 쿼터 출전 가능)
+  if(late){ const s=new Set(); for(let q=quarters-cap;q<quarters;q++) if(q>=0) s.add(q); return s; }
+  const idxs=[]; for(let q=0;q<quarters;q++) idxs.push(q);
+  for(let i=idxs.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=idxs[i]; idxs[i]=idxs[j]; idxs[j]=t; }
+  return new Set(idxs.slice(0, cap));                  // 랜덤 cap개 쿼터
+}
+// 균등 분배: 출전제한 선수는 랜덤 쿼터 출전(쉬는 쿼터 랜덤) + 나머지 슬롯은 적게 뛴 사람부터 채움
 function computeRotation(members, quarters, fieldCount, gkName, shuffle){
   const gkOn = gkName ? 1 : 0;
   const outSlots = Math.max(0, fieldCount - gkOn);
   const out = members.filter(m=>m.name!==gkName).map((m,i)=>({
-    name:m.name, idx:i,                                  // idx = 입력순(도착순)
+    name:m.name, idx:i, late:!!m.late,                   // idx = 입력순(도착순)
     cap:(m.cap==null) ? quarters : Math.max(0, Math.min(quarters, m.cap))
   }));
-  const firstQ = m => quarters - m.cap;                  // 처음 뛸 수 있는 쿼터(지각이면 뒤쪽)
-  const remain = (m,q) => quarters - Math.max(q, firstQ(m));  // q부터 끝까지 남은 가능 쿼터
+  const firstQ = m => m.late ? Math.max(0, quarters - m.cap) : 0;   // 처음 뛸 수 있는 쿼터(지각=뒤쪽)
   const counts = {}; members.forEach(m=> counts[m.name]=0);
   if(gkName) counts[gkName] = quarters;
   const plays = {}; out.forEach(m=> plays[m.name]=0);
   const lastQ = {}; out.forEach(m=> lastQ[m.name]=-1);          // 마지막으로 뛴 쿼터(쉬는 간격 벌리기)
-  const rnd   = {}; out.forEach(m=> rnd[m.name]=Math.random()); // '다시 짜기'용 무작위 키
+  const rnd   = {}; out.forEach(m=> rnd[m.name]=Math.random()); // 유동 선수 무작위 키
   const tie   = (a,b)=> shuffle ? (rnd[a.name]-rnd[b.name]) : (a.idx-b.idx);
+  // 출전제한/지각 = '고정' 선수(뛸 쿼터 미리 확정), 그 외 = 유동 선수(빈 슬롯 균등 배분)
+  const fixedQ = {};                       // name -> Set(뛸 쿼터)
+  const flexible = [];
+  out.forEach(m=>{
+    if(m.cap<quarters || m.late) fixedQ[m.name] = pickPlayQuarters(m.cap, quarters, m.late);
+    else flexible.push(m);
+  });
   const plan = [];
   for(let q=0;q<quarters;q++){
-    const eligible = out.filter(m=> q >= firstQ(m));      // 그 쿼터에 도착해 있는 사람
-    eligible.sort((a,b)=>
-      (plays[a.name]-plays[b.name]) ||                   // 1) 적게 뛴 사람 먼저(전체 균등)
-      (remain(a,q)-remain(b,q))   ||                     // 2) 남은 가능 쿼터 적은(지각) 사람 먼저
-      (lastQ[a.name]-lastQ[b.name]) ||                   // 3) 오래 쉰 사람 먼저 → 연속출전 방지(1Q→3Q, 2Q→4Q)
-      tie(a,b)                                           // 4) 도착순 또는 무작위
-    );
-    const on = eligible.slice(0, outSlots).map(m=>m.name);
+    // 1) 이번 쿼터에 뛰기로 확정된 고정 선수
+    const forced = out.filter(m=> fixedQ[m.name] && fixedQ[m.name].has(q));
+    let on = forced.slice(0, outSlots).map(m=>m.name);
+    // 2) 남은 슬롯은 유동 선수 중 적게 뛴 사람(→ 오래 쉰 사람) 순으로 채움
+    const remaining = outSlots - on.length;
+    if(remaining>0){
+      const pool = flexible.slice().sort((a,b)=>
+        (plays[a.name]-plays[b.name]) ||                 // 적게 뛴 사람 먼저(전체 균등)
+        (lastQ[a.name]-lastQ[b.name]) ||                 // 오래 쉰 사람 먼저(연속출전 방지)
+        tie(a,b)                                         // 도착순 또는 무작위
+      );
+      on = on.concat(pool.slice(0, remaining).map(m=>m.name));
+    }
     on.forEach(nm=>{ plays[nm]++; counts[nm]++; lastQ[nm]=q; });
     const onSet = new Set(on);
-    const off = eligible.filter(m=>!onSet.has(m.name)).map(m=>m.name);   // 도착했지만 휴식
+    // 도착은 했지만 이번 쿼터에 안 뛰는 사람 = 휴식
+    const off = out.filter(m=> q>=firstQ(m) && !onSet.has(m.name)).map(m=>m.name);
     plan.push({on, off});
   }
   return {quarters, fieldCount, gk:gkName, outSlots, members:out, plan, counts};
@@ -1143,17 +1175,21 @@ document.getElementById('rotaCalc').onclick = ()=> runRotation(false);
 function renderRotation(box, R){
   const {quarters, plan, counts, gk, members, outSlots} = R;
   const capOf = {}; members.forEach(m=> capOf[m.name]=m.cap);
-  const firstQ = nm => quarters - (capOf[nm]==null ? quarters : capOf[nm]);
+  const lateOf = {}; members.forEach(m=> lateOf[m.name]=!!m.late);
+  // 지각자만 뒤쪽 쿼터부터 도착 → 그 전 쿼터는 '·'(미도착). 그 외는 처음부터 도착(휴식은 '휴').
+  const firstQ = nm => lateOf[nm] ? Math.max(0, quarters - (capOf[nm]==null?quarters:capOf[nm])) : 0;
   const total = members.length + (gk?1:0);
-  const lateList = members.filter(m=>m.cap<quarters);
+  const lateList  = members.filter(m=>m.late);
+  const limitList = members.filter(m=>!m.late && m.cap<quarters);
   let html = '';
   const note = [];
   note.push(`총 ${total}명` + (gk?` · 고정 GK ${gk}`:''));
   note.push(`쿼터당 출전 ${R.fieldCount}명` + (gk?` (GK 1 + 필드 ${outSlots})`:''));
-  if(lateList.length) note.push(`지각/제한: ${lateList.map(m=>m.name+' '+m.cap+'Q').join(', ')}`);
+  if(limitList.length) note.push(`출전제한: ${limitList.map(m=>m.name+' '+m.cap+'Q').join(', ')}`);
+  if(lateList.length)  note.push(`지각(뒤쪽): ${lateList.map(m=>m.name+' '+m.cap+'Q').join(', ')}`);
   html += `<div class="rotaNote">${note.join(' · ')}</div>`;
   html += `<div class="rotaNote">○ 출전 · 휴 휴식 · · 미도착(지각)</div>`;
-  html += `<div class="rotaNote">🔁 2번 이상 뛰는 선수는 연속 출전을 피해 간격을 둡니다 (예: 1Q→3Q, 2Q→4Q)</div>`;
+  html += `<div class="rotaNote">🔁 출전제한(예: 3쿼터) 선수는 쉬는 쿼터가 매번 랜덤으로 정해집니다 · 🎲로 다시 뽑을 수 있습니다</div>`;
   html += `<button id="rotaShuffle" class="rotaWide" style="margin:6px 0;padding:9px;background:#214a39;border:1px solid var(--accent);color:var(--accent);font-weight:700;">🎲 랜덤으로 다시 짜기</button>`;
 
   html += '<div class="rotaTableWrap"><table class="rotaTable"><thead><tr><th>회원</th>';
@@ -1163,7 +1199,8 @@ function renderRotation(box, R){
   ordered.forEach(nm=>{
     const isGk = nm===gk;
     const cap = isGk?quarters:(capOf[nm]==null?quarters:capOf[nm]);
-    const tag = (!isGk && cap<quarters) ? ` <span class="rotaMini">${cap}Q</span>` : '';
+    const tag = (!isGk && cap<quarters)
+      ? ` <span class="rotaMini">${cap}Q${lateOf[nm]?'·지각':''}</span>` : '';
     html += `<tr><td class="nm">${isGk?'🧤 ':''}${nm}${tag}</td>`;
     for(let q=0;q<quarters;q++){
       if(isGk) html += '<td class="gkc">GK</td>';
@@ -1196,7 +1233,8 @@ function placeLineupHome(lineup){
     if(i>=coords.length) return;
     const c=coords[i];
     const y = 0.52 + (c[1]-MINY)/(MAXY-MINY)*(0.95-0.52);
-    makeToken('home', c[0], y, nm, String(i+1), false, i);
+    // idx=-1: 보드에만 올리는 임시 토큰(회원 명단 roster와 연결 안 함 → 명단이 덮어써지지 않음)
+    makeToken('home', c[0], y, nm, String(i+1), false, -1);
   });
   applyLabels();
 }
@@ -1205,11 +1243,7 @@ function placeQuarterOnBoard(q){
   const R = lastRotation;
   if(activeTab!=='tactics') document.getElementById('tabTactics').click();   // 전술탭으로 전환 먼저
   const lineup = (R.gk?[R.gk]:[]).concat(R.plan[q].on);   // GK는 항상 0번(골문 위치)
-  for(let i=0;i<STARTERS;i++){
-    if(i<lineup.length){ roster.home[i].name = lineup[i]; roster.home[i].num = String(i+1); }
-    else roster.home[i].name = '';
-  }
-  saveRoster();
+  // ⚠ 회원 전체 명단(roster.home)은 건드리지 않는다. 보드에 이번 쿼터 라인업만 배치.
   placeLineupHome(lineup);
   ensureBall();
   if(!benchPanel.classList.contains('hidden')) refreshBench();
