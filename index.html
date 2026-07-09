@@ -4,15 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>축구 전술 보드</title>
-<!-- ===== iPhone 홈 화면 앱 설정 (자동 추가) ===== -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="전술보드">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#10241a">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="manifest" href="manifest.json">
 <style>
   :root{
     --bg:#10241a; --panel:#16352a; --line:#2f6b4f;
@@ -50,6 +41,7 @@
     touch-action:none; box-shadow:0 2px 6px rgba(0,0,0,.45);}
   .token.home{background:var(--home);}
   .token.away{background:var(--away);}
+  .token.guest{font-size:min(1.9vh,11px); letter-spacing:-.5px;}  /* 등번호 자리에 '용병' 글자 */
   .token.ball{width:5.2%; background:transparent; border:none; box-shadow:none;
     font-size:min(4.6vh,32px); line-height:1;}
   .token.cone{width:5%; background:transparent; border:none; box-shadow:none;
@@ -391,14 +383,14 @@ const NUMS = [1,2,3,4,5,6,7,8,9,10,11];
 
 /* ---------- 선수 명단 데이터 (포메이션이 바뀌어도 유지) ---------- */
 const STARTERS = 11;   // 선발 (보드에 배치)
-const SUBS = 12;       // 후보 (명단에만 기입)
+const SUBS = 13;       // 후보 (명단에만 기입)
 function initRoster(){
   const arr = [];
   for(let i=0;i<STARTERS+SUBS;i++) arr.push({num:String(i+1), name:''});
   return arr;
 }
 /* 배포본에 박아넣는 기본 명단 — 📦 배포본 저장 기능이 아래 한 줄을 교체합니다 */
-const EMBEDDED_ROSTER = {"home": [{"num": "1", "name": "김국진"}, {"num": "3", "name": "황준수"}, {"num": "4", "name": "박지우"}, {"num": "5", "name": "강사풍"}, {"num": "6", "name": "장원규"}, {"num": "7", "name": "이화홍"}, {"num": "8", "name": "홍지관"}, {"num": "9", "name": "김성진"}, {"num": "10", "name": "임성하"}, {"num": "11", "name": "권혁진"}, {"num": "12", "name": "이규진"}, {"num": "13", "name": "류시우"}, {"num": "14", "name": "류한선"}, {"num": "16", "name": "강현우"}, {"num": "19", "name": "김규찬"}, {"num": "21", "name": "송현찬"}, {"num": "26", "name": "정준모"}, {"num": "27", "name": "임윤락"}, {"num": "35", "name": "장문빈"}, {"num": "38", "name": "권태훈"}, {"num": "73", "name": "한태희"}, {"num": "77", "name": "박준성"}, {"num": "94", "name": "김성민"}], "away": [{"num": "1", "name": ""}, {"num": "2", "name": ""}, {"num": "3", "name": ""}, {"num": "4", "name": ""}, {"num": "5", "name": ""}, {"num": "6", "name": ""}, {"num": "7", "name": ""}, {"num": "8", "name": ""}, {"num": "9", "name": ""}, {"num": "10", "name": ""}, {"num": "11", "name": ""}, {"num": "12", "name": ""}, {"num": "13", "name": ""}, {"num": "14", "name": ""}, {"num": "15", "name": ""}, {"num": "16", "name": ""}, {"num": "17", "name": ""}, {"num": "18", "name": ""}, {"num": "19", "name": ""}, {"num": "20", "name": ""}, {"num": "21", "name": ""}, {"num": "22", "name": ""}, {"num": "23", "name": ""}]}; /*__EMBEDDED_ROSTER__*/
+const EMBEDDED_ROSTER = {"home": [{"num": "1", "name": "김국진"}, {"num": "2", "name": "지범"}, {"num": "3", "name": "황준수"}, {"num": "4", "name": "박지우"}, {"num": "5", "name": "강사풍"}, {"num": "6", "name": "장원규"}, {"num": "7", "name": "이화홍"}, {"num": "8", "name": "홍지관"}, {"num": "9", "name": "김성진"}, {"num": "10", "name": "임성하"}, {"num": "11", "name": "권혁진"}, {"num": "12", "name": "이규진"}, {"num": "13", "name": "류시우"}, {"num": "14", "name": "류한선"}, {"num": "16", "name": "강현우"}, {"num": "19", "name": "김규찬"}, {"num": "21", "name": "송현찬"}, {"num": "26", "name": "정준모"}, {"num": "27", "name": "임윤락"}, {"num": "35", "name": "장문빈"}, {"num": "38", "name": "권태훈"}, {"num": "73", "name": "한태희"}, {"num": "77", "name": "박준성"}, {"num": "94", "name": "김성민"}], "away": [{"num": "1", "name": ""}, {"num": "2", "name": ""}, {"num": "3", "name": ""}, {"num": "4", "name": ""}, {"num": "5", "name": ""}, {"num": "6", "name": ""}, {"num": "7", "name": ""}, {"num": "8", "name": ""}, {"num": "9", "name": ""}, {"num": "10", "name": ""}, {"num": "11", "name": ""}, {"num": "12", "name": ""}, {"num": "13", "name": ""}, {"num": "14", "name": ""}, {"num": "15", "name": ""}, {"num": "16", "name": ""}, {"num": "17", "name": ""}, {"num": "18", "name": ""}, {"num": "19", "name": ""}, {"num": "20", "name": ""}, {"num": "21", "name": ""}, {"num": "22", "name": ""}, {"num": "23", "name": ""}, {"num": "24", "name": ""}]}; /*__EMBEDDED_ROSTER__*/
 const roster = { home: initRoster(), away: initRoster() };
 let homeColor = '#e89b86';   // 기본 살구색 (변경 가능)
 let awayColor = '#1c1c1c';   // 기본 검정 (변경 가능)
@@ -847,7 +839,8 @@ function saveImage(){
     o.fillStyle = (t.team==='home'? homeColor : awayColor);
     o.fill(); o.lineWidth=2; o.strokeStyle='rgba(255,255,255,.85)'; o.stroke();
     {
-      o.fillStyle='#fff'; o.font=`bold ${Math.round(rad*0.9)}px sans-serif`;
+      // 숫자 등번호는 크게, '용병' 같은 글자는 원 안에 들어가게 작게
+      o.fillStyle='#fff'; o.font=`bold ${Math.round(rad*(/^\d*$/.test(String(t.num))?0.9:0.6))}px sans-serif`;
       o.fillText(t.num, px, py);
       if(showLabels && t.label){
         o.fillStyle='#fff'; o.font=`bold ${Math.round(rad*0.6)}px sans-serif`;
@@ -882,8 +875,8 @@ function buildRosterList(team, listId){
 
   sec('선발 11');
   for(let i=0;i<STARTERS;i++) addRow(i, i===0?'GK 이름':`선발 ${i+1} 이름`);
-  sec('후보 12');
-  for(let i=STARTERS;i<STARTERS+SUBS;i++) addRow(i, `후보 ${i-STARTERS+1} 이름`);
+  sec('후보 '+(roster[team].length-STARTERS));
+  for(let i=STARTERS;i<roster[team].length;i++) addRow(i, `후보 ${i-STARTERS+1} 이름`);
 }
 function buildRosterPanel(){
   buildRosterList('home','homeList');
@@ -1225,6 +1218,12 @@ function renderRotation(box, R){
   const sh = box.querySelector('#rotaShuffle'); if(sh) sh.onclick = ()=> runRotation(true);
 }
 
+/* 이름 → 회원 명단의 실제 등번호 (명단·기본명단 순서로 찾고, 없으면 빈 값) */
+function memberNumOf(nm){
+  const hit = arr => Array.isArray(arr) ? arr.find(p=> p && ((p.name||'').trim()===nm)) : null;
+  const p = hit(roster.home) || (typeof EMBEDDED_ROSTER!=='undefined' && EMBEDDED_ROSTER ? hit(EMBEDDED_ROSTER.home) : null);
+  return p ? String(p.num) : '';
+}
 function placeLineupHome(lineup){
   const coords = F[document.getElementById('formationSel').value];
   tokens = tokens.filter(t=>{ if(t.team==='home' && !t.isBall){ t.el.remove(); return false;} return true;});
@@ -1234,7 +1233,10 @@ function placeLineupHome(lineup){
     const c=coords[i];
     const y = 0.52 + (c[1]-MINY)/(MAXY-MINY)*(0.95-0.52);
     // idx=-1: 보드에만 올리는 임시 토큰(회원 명단 roster와 연결 안 함 → 명단이 덮어써지지 않음)
-    makeToken('home', c[0], y, nm, String(i+1), false, -1);
+    // 등번호는 회원 명단에서 찾아 표시, 명단에 없는 이름은 '용병' 표시
+    const num = memberNumOf(nm);
+    const t = makeToken('home', c[0], y, nm, num || '용병', false, -1);
+    if(!num) t.el.classList.add('guest');   // 글자가 원 안에 들어가게 작게
   });
   applyLabels();
 }
@@ -1266,8 +1268,24 @@ function loadRoster(){
     const r = JSON.parse(localStorage.getItem('tb_roster'));
     if(r && Array.isArray(r.home) && Array.isArray(r.away)){
       roster.home = r.home; roster.away = r.away;
+      // 3) 파일 기본 명단(EMBEDDED)에 새로 추가된 회원이 저장본에 없으면 빈 칸에 채워 넣음
+      if(EMBEDDED_ROSTER && Array.isArray(EMBEDDED_ROSTER.home)){
+        const have = new Set(roster.home.map(p=>((p&&p.name)||'').trim()).filter(Boolean));
+        EMBEDDED_ROSTER.home.forEach(p=>{
+          const nm = ((p&&p.name)||'').trim();
+          if(!nm || have.has(nm)) return;
+          const slot = roster.home.find(q=> q && !(q.name||'').trim());
+          if(slot){ slot.num = String(p.num); slot.name = nm; }
+          else roster.home.push({num:String(p.num), name:nm});
+          have.add(nm);
+        });
+      }
     }
   }catch(e){}
+  // 명단 칸 수 보정 (회원이 늘어 기본 칸 수가 커진 경우 부족한 칸을 채움)
+  ['home','away'].forEach(k=>{
+    for(let i=roster[k].length;i<STARTERS+SUBS;i++) roster[k].push({num:String(i+1), name:''});
+  });
 }
 /* 현재 명단을 HTML 파일 안에 박아넣은 '배포본'을 내려받기 — 이 파일을 남에게 주면 명단이 그대로 들어 있음 */
 function exportRosterFile(){
@@ -1682,14 +1700,6 @@ refreshBench();               // 후보 벤치 목록 채우기
 refreshLoadSelect();          // 저장된 상황 목록 채우기
 refreshPresetSelect();        // 예시 도안 목록 채우기
 resetHistory();               // 되돌리기 기록 초기화
-</script>
-<script>
-/* 오프라인 작동: 처음 1회 접속 후 인터넷 없이 사용 가능 */
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').catch(function () {});
-  });
-}
 </script>
 </body>
 </html>
