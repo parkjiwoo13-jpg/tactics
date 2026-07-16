@@ -114,12 +114,16 @@
   #caption.hidden{display:none;}
   #caption b{color:var(--accent);}
 
-  /* ---------- 쿼터 로테이션 패널 ---------- */
-  #rotaPanel{position:fixed; top:0; right:0; height:100%; width:min(460px,95vw);
-    background:var(--panel); box-shadow:-4px 0 26px rgba(0,0,0,.55); z-index:110;
-    display:flex; flex-direction:column; transition:transform .22s ease;}
-  #rotaPanel.hidden{transform:translateX(106%);}
-  .rotaBody{flex:1; overflow:auto; padding:14px;}
+  /* ---------- 쿼터 로테이션 (스테이지 인라인) ---------- */
+  #rotaStage{display:none; width:100%; max-width:780px; height:100%;
+    flex-direction:column; overflow:hidden; background:var(--panel);
+    border:1px solid var(--line); border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,.4);}
+  #app.rotaActive #fieldWrap{display:none;}
+  #app.rotaActive #rotaStage{display:flex;}
+  #app.rotaActive #stage{align-items:stretch; justify-content:center;}
+  .rotaStageHead{padding:12px 16px; border-bottom:1px solid var(--line);
+    font-size:16px; font-weight:700; color:var(--accent); flex-shrink:0;}
+  .rotaBody{flex:1; overflow:auto; padding:14px; min-height:0;}
   .rotaSetup{display:flex; flex-direction:column; gap:9px;}
   .rotaLbl{font-size:13px; font-weight:700; color:var(--accent);}
   .rotaMini{font-weight:400; color:#9fc7b3; font-size:11px;}
@@ -199,7 +203,8 @@
   <header class="collapsed">
     <h1>⚽ 축구 전술 보드</h1>
     <div class="tabs">
-      <button id="tabTactics" class="tab active">⚽ 전술</button>
+      <button id="tabRota" class="tab active">🔄 쿼터</button>
+      <button id="tabTactics" class="tab">⚽ 전술</button>
       <button id="tabTraining" class="tab">🏃 훈련</button>
     </div>
     <button id="toolToggle" class="toolToggle" type="button">🛠 도구 ▾</button>
@@ -224,7 +229,6 @@
         <label style="font-size:13px;">원정색<input type="color" id="awayColor" value="#1c1c1c"></label>
         <button id="rosterBtn">📋 선수명단</button>
         <button id="benchBtn">🔁 후보</button>
-        <button id="rotaBtn">🔄 쿼터로테</button>
       </span>
       <span id="trainingTools" class="toolgrp" style="display:none;">
         <button id="addHome">🧍 선수(홈)</button>
@@ -233,6 +237,7 @@
         <button id="addCone">🔺 고깔</button>
         <span style="font-size:12px; color:#9fc7b3;">(추가 항목은 더블클릭 시 삭제)</span>
       </span>
+      <span id="commonTools" class="toolgrp">
       <span class="sep"></span>
       <label style="font-size:13px;">색
         <select id="penColor">
@@ -268,6 +273,7 @@
       <button id="presetBtn">▶ 예시 적용</button>
       <span class="sep"></span>
       <button id="resetBtn">전체 초기화</button>
+      </span>
     </div>
   </header>
 
@@ -277,6 +283,39 @@
       <canvas id="draw"></canvas>
       <div id="caption" class="hidden"></div>
       <!-- 선수 토큰은 JS가 생성 -->
+    </div>
+
+    <div id="rotaStage">
+      <div class="rotaStageHead">🔄 쿼터 로테이션 <span class="rotaMini">회원을 균등하게 나눠 쿼터별로 출전시키고, 바로 보드에 배치·교체합니다</span></div>
+      <div class="rotaBody">
+        <div class="rotaSetup">
+          <label class="rotaLbl">회원 명단 <span class="rotaMini">(한 줄에 한 명, 먼저 온 순서대로)</span></label>
+          <textarea id="rotaNames" rows="7" placeholder="홍길동&#10;김철수&#10;용병1 3   ← 3쿼터만 출전(쉬는 쿼터는 랜덤)&#10;박지성 지각   ← 늦게 도착(뒤쪽 쿼터부터)&#10;최영 지각 2   ← 지각 + 2쿼터만"></textarea>
+          <div class="rotaMini">• 위에 입력한 순서 = 도착 순서 → 먼저 온 사람이 1쿼터부터 우선 출전<br>• 이름 뒤에 <b>숫자</b>를 쓰면 <b>그 쿼터 수만큼만 출전</b>하고 <b>쉬는 쿼터는 매번 랜덤</b> (예: <b>용병1 3</b>)<br>• <b>지각</b>이라고 쓰면 늦게 온 사람 → <b>뒤쪽 쿼터부터</b> 배정 (예: <b>박지성 지각</b>, <b>최영 지각 2</b>)</div>
+          <button id="rotaFromRoster" class="rotaWide">📋 홈 명단에서 골라 가져오기</button>
+          <div id="rotaPickWrap" class="hidden">
+            <div class="rotaPickHead">
+              <label><input type="checkbox" id="rotaPickAll"> 전체 선택</label>
+              <button id="rotaPickAdd" class="rotaPickAdd">✓ 선택한 선수 추가</button>
+            </div>
+            <div id="rotaPickList"></div>
+          </div>
+          <div class="rotaOpts">
+            <label>쿼터 수 <input id="rotaQuarters" type="number" min="1" max="12" value="4"></label>
+            <label>쿼터당 출전 <input id="rotaField" type="number" min="1" max="11" value="11"></label>
+          </div>
+          <div class="rotaOpts">
+            <label class="rotaGkLbl">고정 골키퍼
+              <select id="rotaGk"><option value="">(없음 / 전원 로테)</option></select>
+            </label>
+          </div>
+          <div class="rotaOpts">
+            <label class="rotaGkLbl"><input type="checkbox" id="rotaPosRotate" checked> 포지션도 로테이션 <span class="rotaMini">(쿼터마다 수비·미드·공격 자리 바꿔 배분)</span></label>
+          </div>
+          <button id="rotaCalc" class="rotaWide rotaPrimary">⚖️ 균등 분배하기</button>
+        </div>
+        <div id="rotaResult" class="rotaResult"></div>
+      </div>
     </div>
   </div>
 
@@ -316,38 +355,6 @@
     </div>
   </div>
 
-  <div id="rotaPanel" class="hidden">
-    <div class="rosterHead">
-      <span>🔄 쿼터 로테이션</span>
-      <button id="rotaClose">✕ 닫기</button>
-    </div>
-    <div class="rotaBody">
-      <div class="rotaSetup">
-        <label class="rotaLbl">회원 명단 <span class="rotaMini">(한 줄에 한 명, 먼저 온 순서대로)</span></label>
-        <textarea id="rotaNames" rows="7" placeholder="홍길동&#10;김철수&#10;용병1 3   ← 3쿼터만 출전(쉬는 쿼터는 랜덤)&#10;박지성 지각   ← 늦게 도착(뒤쪽 쿼터부터)&#10;최영 지각 2   ← 지각 + 2쿼터만"></textarea>
-        <div class="rotaMini">• 위에 입력한 순서 = 도착 순서 → 먼저 온 사람이 1쿼터부터 우선 출전<br>• 이름 뒤에 <b>숫자</b>를 쓰면 <b>그 쿼터 수만큼만 출전</b>하고 <b>쉬는 쿼터는 매번 랜덤</b> (예: <b>용병1 3</b>)<br>• <b>지각</b>이라고 쓰면 늦게 온 사람 → <b>뒤쪽 쿼터부터</b> 배정 (예: <b>박지성 지각</b>, <b>최영 지각 2</b>)</div>
-        <button id="rotaFromRoster" class="rotaWide">📋 홈 명단에서 골라 가져오기</button>
-        <div id="rotaPickWrap" class="hidden">
-          <div class="rotaPickHead">
-            <label><input type="checkbox" id="rotaPickAll"> 전체 선택</label>
-            <button id="rotaPickAdd" class="rotaPickAdd">✓ 선택한 선수 추가</button>
-          </div>
-          <div id="rotaPickList"></div>
-        </div>
-        <div class="rotaOpts">
-          <label>쿼터 수 <input id="rotaQuarters" type="number" min="1" max="12" value="4"></label>
-          <label>쿼터당 출전 <input id="rotaField" type="number" min="1" max="11" value="11"></label>
-        </div>
-        <div class="rotaOpts">
-          <label class="rotaGkLbl">고정 골키퍼
-            <select id="rotaGk"><option value="">(없음 / 전원 로테)</option></select>
-          </label>
-        </div>
-        <button id="rotaCalc" class="rotaWide rotaPrimary">⚖️ 균등 분배하기</button>
-      </div>
-      <div id="rotaResult" class="rotaResult"></div>
-    </div>
-  </div>
 </div>
 
 <script>
@@ -397,6 +404,7 @@ let awayColor = '#1c1c1c';   // 기본 검정 (변경 가능)
 
 /* ---------- 캔버스 크기 (남은 공간에 항상 맞춤 → 잘림 방지) ---------- */
 function fit(){
+  if(activeTab==='rota'){ return; }        // 쿼터 탭은 보드가 숨겨져 있어 크기조정 불필요
   const stage = document.getElementById('stage');
   const bp = document.getElementById('benchPanel');
   const benchOpenMobile = bp && !bp.classList.contains('hidden')
@@ -1009,9 +1017,6 @@ document.getElementById('benchClose').onclick=()=>{ benchPanel.classList.add('hi
 
 /* ---------- 쿼터 로테이션 (회원 균등 분배) ---------- */
 let lastRotation = null;
-const rotaPanel = document.getElementById('rotaPanel');
-document.getElementById('rotaBtn').onclick = ()=>{ populateRotaGk(); rotaPanel.classList.toggle('hidden'); };
-document.getElementById('rotaClose').onclick = ()=> rotaPanel.classList.add('hidden');
 
 // 한 줄 = 한 명.
 //  · 이름 뒤 숫자 = 출전할 쿼터 수(쉬는 쿼터는 랜덤 분산)   예) "용병1 3"
@@ -1068,7 +1073,7 @@ function buildRotaPick(){
       + '(또는 위 입력칸에 이름을 바로 적어도 됩니다.)</div>'
       + '<button id="rotaOpenRoster" class="rotaWide" style="margin-top:8px">📋 선수명단 등록하러 가기</button>';
     const btn = document.getElementById('rotaOpenRoster');
-    if(btn) btn.onclick = ()=>{ rotaPanel.classList.add('hidden'); document.getElementById('rosterPanel').classList.remove('hidden'); };
+    if(btn) btn.onclick = ()=>{ document.getElementById('rosterPanel').classList.remove('hidden'); };
     return;
   }
   list.innerHTML = names.map(nm=>{
@@ -1153,6 +1158,59 @@ function computeRotation(members, quarters, fieldCount, gkName, shuffle){
   return {quarters, fieldCount, gk:gkName, outSlots, members:out, plan, counts};
 }
 
+/* ---------- 포지션 로테이션 ----------
+   쿼터마다 출전 선수를 포메이션 자리(수비/미드/공격)에 배분하되,
+   한 명이 계속 같은 라인에 서지 않도록 매 쿼터 라인 경험을 균등하게 맞춘다.
+   결과는 plan[q].lineup(포메이션 순서 배열)·pos(이름→라인)·lines(라인별 이름)로 저장. */
+const LINE_CHAR = {GK:'🧤', DEF:'수', MID:'미', FWD:'공'};
+const LINE_NAME = {GK:'GK', DEF:'수비', MID:'미드', FWD:'공격'};
+function lineOfY(y){ return y>=0.72 ? 'DEF' : (y>=0.485 ? 'MID' : 'FWD'); }   // 홈 기준 y 클수록 자기 골문
+function computePositions(R, formationKey){
+  const {quarters, plan, gk, outSlots} = R;
+  const coords = F[formationKey] || F['442'];
+  const hasGk = !!gk;
+  // 이번 경기에 채울 필드 자리(고정 GK는 제외). i = 포메이션 좌표 인덱스
+  const slots = [];
+  if(hasGk){
+    for(let i=1;i<coords.length && slots.length<outSlots;i++) slots.push({i, line:lineOfY(coords[i][1])});
+  } else {
+    for(let i=0;i<coords.length && slots.length<R.fieldCount;i++)
+      slots.push({i, line: i===0 ? 'GK' : lineOfY(coords[i][1])});
+  }
+  const posCount = {};   // 이름 -> {GK,DEF,MID,FWD} 누적 라인 출전 수
+  const ens = nm => (posCount[nm] || (posCount[nm]={GK:0,DEF:0,MID:0,FWD:0}));
+  const rnd = {};        // 동점 시 무작위(매 계산마다 달라짐)
+  for(let q=0;q<quarters;q++){
+    const pool = plan[q].on.slice();               // 이번 쿼터 출전(비 GK) 선수
+    pool.forEach(nm=>{ if(rnd[nm]==null) rnd[nm]=Math.random(); });
+    // 라인이 귀한(자리 적은) 순으로 먼저 채워야 편중이 덜함 → GK,FWD,MID,DEF 순 정렬
+    const order = {GK:0, FWD:1, MID:2, DEF:3};
+    const seq = slots.map((s,si)=>({s,si})).sort((a,b)=>order[a.s.line]-order[b.s.line]);
+    const assign = new Array(slots.length).fill(null);
+    const used = new Set();
+    seq.forEach(({s,si})=>{
+      let best=null, bk=Infinity;
+      pool.forEach(nm=>{
+        if(used.has(nm)) return;
+        const pc = ens(nm);
+        // 이 라인을 적게 뛴 사람 우선 → 총 출전 적은 사람 → 무작위
+        const k = pc[s.line]*1000 + (pc.GK+pc.DEF+pc.MID+pc.FWD)*3 + rnd[nm];
+        if(k<bk){ bk=k; best=nm; }
+      });
+      if(best){ assign[si]=best; used.add(best); }
+    });
+    const lineup = [];   // 포메이션 좌표 순서대로 (구멍 없이 0..n 연속)
+    if(hasGk) lineup[0] = gk;
+    const pos = {}, lines = {GK:[], DEF:[], MID:[], FWD:[]};
+    slots.forEach((s,si)=>{
+      const nm = assign[si]; if(!nm) return;
+      lineup[s.i] = nm; pos[nm] = s.line; lines[s.line].push(nm);
+      ens(nm)[s.line]++;
+    });
+    plan[q].lineup = lineup; plan[q].pos = pos; plan[q].lines = lines;
+  }
+}
+
 function runRotation(shuffle){
   const members = rotaParseMembers(), box = document.getElementById('rotaResult');
   if(members.length===0){ box.innerHTML = '<div class="rotaWarn">먼저 회원 명단을 입력하세요.</div>'; return; }
@@ -1160,7 +1218,11 @@ function runRotation(shuffle){
   const fieldCount= Math.max(1, Math.min(11, parseInt(document.getElementById('rotaField').value)||11));
   let gkName = document.getElementById('rotaGk').value;
   if(gkName && !members.some(m=>m.name===gkName)) gkName = '';
+  const posRotate = document.getElementById('rotaPosRotate').checked;
   lastRotation = computeRotation(members, quarters, fieldCount, gkName, shuffle);
+  lastRotation.posRotate = posRotate;
+  lastRotation.formation = document.getElementById('formationSel').value;
+  if(posRotate) computePositions(lastRotation, lastRotation.formation);
   renderRotation(box, lastRotation);
 }
 document.getElementById('rotaCalc').onclick = ()=> runRotation(false);
@@ -1181,7 +1243,8 @@ function renderRotation(box, R){
   if(limitList.length) note.push(`출전제한: ${limitList.map(m=>m.name+' '+m.cap+'Q').join(', ')}`);
   if(lateList.length)  note.push(`지각(뒤쪽): ${lateList.map(m=>m.name+' '+m.cap+'Q').join(', ')}`);
   html += `<div class="rotaNote">${note.join(' · ')}</div>`;
-  html += `<div class="rotaNote">○ 출전 · 휴 휴식 · · 미도착(지각)</div>`;
+  html += `<div class="rotaNote">${R.posRotate ? '🧤 GK · 수 수비 · 미 미드 · 공 공격' : '○ 출전'} · 휴 휴식 · · 미도착(지각)</div>`;
+  if(R.posRotate) html += `<div class="rotaNote">🧭 포지션 로테이션 ON — 쿼터마다 수비·미드·공격 자리를 바꿔 배분합니다 (포메이션: ${R.formation})</div>`;
   html += `<div class="rotaNote">🔁 출전제한(예: 3쿼터) 선수는 쉬는 쿼터가 매번 랜덤으로 정해집니다 · 🎲로 다시 뽑을 수 있습니다</div>`;
   html += `<button id="rotaShuffle" class="rotaWide" style="margin:6px 0;padding:9px;background:#214a39;border:1px solid var(--accent);color:var(--accent);font-weight:700;">🎲 랜덤으로 다시 짜기</button>`;
 
@@ -1197,7 +1260,10 @@ function renderRotation(box, R){
     html += `<tr><td class="nm">${isGk?'🧤 ':''}${nm}${tag}</td>`;
     for(let q=0;q<quarters;q++){
       if(isGk) html += '<td class="gkc">GK</td>';
-      else if(plan[q].on.includes(nm)) html += '<td class="on">○</td>';
+      else if(plan[q].on.includes(nm)){
+        const ln = (R.posRotate && plan[q].pos) ? plan[q].pos[nm] : null;
+        html += `<td class="on">${ln ? (LINE_CHAR[ln]||'○') : '○'}</td>`;
+      }
       else if(q>=firstQ(nm)) html += '<td class="off">휴</td>';
       else html += '<td class="off">·</td>';
     }
@@ -1209,7 +1275,14 @@ function renderRotation(box, R){
     const onCnt = (gk?1:0) + plan[q].on.length;
     html += `<div class="rotaQ"><h4><span>${q+1}쿼터 (출전 ${onCnt}명)</span>`
          +  `<button data-q="${q}" class="rotaPlaceBtn">▶ 전술보드 배치</button></h4>`;
-    html += `<div class="qline">${gk?'🧤 '+gk+' / ':''}${plan[q].on.join(', ')||'-'}</div>`;
+    if(R.posRotate && plan[q].lines){
+      const L = plan[q].lines;
+      const seg = (lbl,a)=> (a && a.length) ? `<b>${lbl}</b> ${a.join(', ')}` : '';
+      const parts = [ gk?`🧤 ${gk}`:'', seg('🧤',L.GK), seg('공격',L.FWD), seg('미드',L.MID), seg('수비',L.DEF) ].filter(Boolean);
+      html += `<div class="qline">${parts.join(' &nbsp;·&nbsp; ')||'-'}</div>`;
+    } else {
+      html += `<div class="qline">${gk?'🧤 '+gk+' / ':''}${plan[q].on.join(', ')||'-'}</div>`;
+    }
     if(plan[q].off.length) html += `<div class="qline qoff">휴식: ${plan[q].off.join(', ')}</div>`;
     html += '</div>';
   }
@@ -1243,14 +1316,25 @@ function placeLineupHome(lineup){
 function placeQuarterOnBoard(q){
   if(!lastRotation) return;
   const R = lastRotation;
-  if(activeTab!=='tactics') document.getElementById('tabTactics').click();   // 전술탭으로 전환 먼저
-  const lineup = (R.gk?[R.gk]:[]).concat(R.plan[q].on);   // GK는 항상 0번(골문 위치)
+  // 포지션 로테이션이 켜져 있으면 계산에 쓴 포메이션으로 맞춰 배치(라인 배열과 일치)
+  if(R.posRotate && R.formation) document.getElementById('formationSel').value = R.formation;
+  switchTab('tactics');                                   // 전술탭으로 전환(보드 표시)
+  // 포지션 배열이 있으면 라인 배치, 없으면 GK→출전 순서 배치
+  const lineup = (R.posRotate && R.plan[q].lineup)
+        ? R.plan[q].lineup
+        : (R.gk?[R.gk]:[]).concat(R.plan[q].on);          // GK는 항상 0번(골문 위치)
   // ⚠ 회원 전체 명단(roster.home)은 건드리지 않는다. 보드에 이번 쿼터 라인업만 배치.
   placeLineupHome(lineup);
   ensureBall();
-  if(!benchPanel.classList.contains('hidden')) refreshBench();
+  // 배치 직후 후보 벤치를 자동으로 열어 바로 교체할 수 있게
+  benchPanel.classList.remove('hidden');
+  refreshBench();
+  const cap = document.getElementById('caption');
+  const onCnt = (R.gk?1:0) + R.plan[q].on.length;
+  cap.innerHTML = `<b>${q+1}쿼터</b> 배치 완료 (출전 ${onCnt}명) · 후보를 <b>교체할 선수 쪽으로</b> 끌어다 놓으면 바뀝니다`;
+  cap.classList.remove('hidden');
+  fit();
   pushHistory();
-  rotaPanel.classList.add('hidden');
 }
 
 /* ---------- 저장소 (브라우저 localStorage — 창 닫아도 유지) ---------- */
@@ -1291,7 +1375,8 @@ function loadRoster(){
 function exportRosterFile(){
   const clone = document.documentElement.cloneNode(true);
   clone.querySelectorAll('#fieldWrap .token').forEach(e=>e.remove());      // JS가 만든 토큰 제거(원본 상태로)
-  clone.querySelectorAll('#rosterPanel,#benchPanel,#rotaPanel').forEach(p=>p.classList.add('hidden'));
+  clone.querySelectorAll('#rosterPanel,#benchPanel').forEach(p=>p.classList.add('hidden'));
+  const cr = clone.querySelector('#rotaResult'); if(cr) cr.innerHTML = '';  // 쿼터 계산 결과 잔재 제거(새로 시작)
   let html = '<!DOCTYPE html>\n' + clone.outerHTML;
   const json = JSON.stringify(roster).replace(/<\/script/gi,'<\\/script');  // 안전 처리
   html = html.replace(/const EMBEDDED_ROSTER = [\s\S]*?\/\*__EMBEDDED_ROSTER__\*\//,
@@ -1450,30 +1535,49 @@ function serializeTokens(){
 function rebuildTokens(arr){
   (arr||[]).forEach(d=> makeToken(d.team, d.x, d.y, d.label, d.num, d.isBall, d.idx, d.kind));
 }
+const BOARD_TABS = {tactics:1, training:1};   // 보드(토큰)를 쓰는 탭
 function switchTab(tab){
   if(tab===activeTab) return;
-  // 현재 탭 상태 보관
-  scenes[activeTab].tokens = serializeTokens();
-  scenes[activeTab].strokes = strokes;
-  // 화면 비우고 대상 탭 로드
+  // 현재가 보드 탭이면 상태 보관
+  if(BOARD_TABS[activeTab]){
+    scenes[activeTab].tokens = serializeTokens();
+    scenes[activeTab].strokes = strokes;
+  }
   tokens.forEach(t=>t.el.remove()); tokens=[];
   activeTab = tab;
-  strokes = scenes[tab].strokes || []; selected = null;
-  // 훈련=반코트 가로 / 전술=세로 풀코트
-  wrap.classList.toggle('training', tab==='training');
   document.getElementById('caption').classList.add('hidden');   // 설명 캡션 숨김
+
+  // 탭 하이라이트
+  document.getElementById('tabRota').classList.toggle('active', tab==='rota');
+  document.getElementById('tabTactics').classList.toggle('active', tab==='tactics');
+  document.getElementById('tabTraining').classList.toggle('active', tab==='training');
+  // 도구 막대 표시(쿼터 탭은 도구 숨김)
+  const show = (id,on)=>{ const e=document.getElementById(id); if(e) e.style.display = on?'':'none'; };
+  show('tacticsTools',  tab==='tactics');
+  show('trainingTools', tab==='training');
+  show('commonTools',   tab!=='rota');
+  // 쿼터 탭이면 보드 화면을 숨기고 로테이션 워크스페이스만 표시
+  document.getElementById('app').classList.toggle('rotaActive', tab==='rota');
+
+  if(tab==='rota'){
+    benchPanel.classList.add('hidden');
+    document.getElementById('rosterPanel').classList.add('hidden');
+    strokes = []; selected = null;
+    populateRotaGk();
+    fit(); resetHistory();
+    return;
+  }
+  // 보드 탭 로드 (훈련=반코트 가로 / 전술=세로 풀코트)
+  strokes = scenes[tab].strokes || []; selected = null;
+  wrap.classList.toggle('training', tab==='training');
   fit();                                   // 캔버스 크기·필드 다시 그림
   rebuildTokens(scenes[tab].tokens);
   redrawStrokes(); applyLabels(); resetHistory();
-  // 도구/탭 표시 전환
-  document.getElementById('tacticsTools').style.display = tab==='tactics' ? '' : 'none';
-  document.getElementById('trainingTools').style.display = tab==='training' ? '' : 'none';
-  document.getElementById('tabTactics').classList.toggle('active', tab==='tactics');
-  document.getElementById('tabTraining').classList.toggle('active', tab==='training');
   if(tab==='training') benchPanel.classList.add('hidden');   // 후보 벤치는 전술탭 전용
   else refreshBench();
 }
-document.getElementById('tabTactics').onclick = ()=>switchTab('tactics');
+document.getElementById('tabRota').onclick     = ()=>switchTab('rota');
+document.getElementById('tabTactics').onclick  = ()=>switchTab('tactics');
 document.getElementById('tabTraining').onclick = ()=>switchTab('training');
 
 /* ---------- 훈련탭: 선수/공/고깔 추가 ---------- */
@@ -1700,6 +1804,7 @@ refreshBench();               // 후보 벤치 목록 채우기
 refreshLoadSelect();          // 저장된 상황 목록 채우기
 refreshPresetSelect();        // 예시 도안 목록 채우기
 resetHistory();               // 되돌리기 기록 초기화
+switchTab('rota');            // 앱을 켜면 '쿼터 로테이션' 화면으로 시작(메인 기능)
 </script>
 </body>
 </html>
