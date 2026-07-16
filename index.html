@@ -726,7 +726,7 @@ function drawArrow(ctx, s, w, h){
 
 /* ---------- 배치/초기화 ---------- */
 function placeFormation(team, key){
-  weekSquad = null;   // 명단 기반 수동 배치 → 후보 벤치도 전체 명단 방식으로 되돌림
+  if(team==='home') weekSquad = null;   // 홈 명단 기반 수동 배치 → 후보 벤치도 전체 명단 방식으로 되돌림
   // 해당 팀 토큰 제거(공 제외)
   tokens = tokens.filter(t=>{ if(t.team===team && !t.isBall){ t.el.remove(); return false;} return true;});
   const coords = F[key];
@@ -1291,6 +1291,23 @@ function placeLineupHome(lineup){
   });
   applyLabels();
 }
+/* 지금 보드에 올라와 있는 홈 선수 '그대로'를 새 포메이션 자리에 재배치(명단 전체를 다시 부르지 않음).
+   현재 y(자기 골문에 가까운 순=뒤)로 정렬해 GK→수비→…→공격 자리에 매핑 → 위치 역할 최대한 유지. */
+function rearrangeHomeIntoFormation(key){
+  const coords = F[key];
+  const players = tokens.filter(t=>t.kind==='player' && t.team==='home')
+                        .sort((a,b)=> b.y - a.y)                 // y 큰(뒤=골문쪽) 먼저
+                        .map(t=>({name:t.label, num:t.num}));
+  tokens = tokens.filter(t=>{ if(t.team==='home' && t.kind==='player'){ t.el.remove(); return false;} return true;});
+  const MINY=.38, MAXY=.93;
+  players.forEach((p,i)=>{
+    if(i>=coords.length) return;
+    const c=coords[i];
+    const y = 0.52 + (c[1]-MINY)/(MAXY-MINY)*(0.95-0.52);
+    makeToken('home', c[0], y, p.name, p.num||'용병', false, -1);
+  });
+  applyLabels();
+}
 function placeQuarterOnBoard(q){
   if(!lastRotation) return;
   const R = lastRotation;
@@ -1402,8 +1419,14 @@ document.getElementById('awayColor').oninput = e=> setTeamColor('away', e.target
 
 /* ---------- 버튼 연결 ---------- */
 function applyFormation(){
-  placeFormation(document.getElementById('teamSel').value,
-                 document.getElementById('formationSel').value);
+  const team = document.getElementById('teamSel').value;
+  const key  = document.getElementById('formationSel').value;
+  // 쿼터 라인업(weekSquad)이 올라가 있는 홈이면 → 그 선수들 유지한 채 포메이션만 변경
+  if(team==='home' && weekSquad){
+    rearrangeHomeIntoFormation(key);
+  } else {
+    placeFormation(team, key);   // 그 외에는 명단 기반 배치
+  }
   refreshBench(); pushHistory();
 }
 document.getElementById('applyBtn').onclick=applyFormation;
