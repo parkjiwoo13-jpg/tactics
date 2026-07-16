@@ -164,18 +164,19 @@
   .rotaPickItem:hover{background:#13302a;}
   .rotaPickItem input{width:20px; height:20px; accent-color:var(--accent);}
 
-  .toolToggle{display:none;}
   @media (max-width:560px){
     header{padding:6px 8px; gap:6px; align-items:center;}
-    header h1{width:auto; margin:0 4px 0 0; font-size:15px;}
+    header h1{display:none;}                    /* 폰: 제목 숨겨 경기장 확보 */
     button,select{padding:7px 9px; font-size:13px;}
-    .toolbar{gap:5px; width:100%;}
-    /* 폰에서 도구 막대가 화면을 다 먹지 않도록 높이 제한 + 스크롤 */
-    header .toolbar{max-height:36vh; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-right:2px;}
-    header.collapsed .toolbar{display:none;}   /* 접힘: 경기장을 크게 */
-    /* 도구 접기/펼치기 버튼 (폰 전용) */
-    .toolToggle{display:inline-block; margin-left:auto; white-space:nowrap;
-      background:var(--accent); color:#05231a; font-weight:700; border-color:var(--accent);}
+    /* 도구막대: 접기 없이 '항상 보이는 한 줄 가로 스크롤' (도구 토글 제거) */
+    .toolbar{gap:5px; width:100%; flex-wrap:nowrap; overflow-x:auto;
+      -webkit-overflow-scrolling:touch; padding-bottom:3px;}
+    .toolbar button, .toolbar select, .toolbar label, .toolbar .sep{flex-shrink:0;}
+    /* 그룹 span을 투명 처리 → 버튼이 직접 flex 아이템이 되어 order로 앞에 고정 가능 */
+    #tacticsTools, #trainingTools, #commonTools{display:contents;}
+    #benchBtn{order:-3;}   /* 🔁 후보 : 맨 앞 고정 */
+    #undoBtn{order:-2;}    /* ↶ 되돌리기(선취소) : 그 다음 */
+    #redoBtn{order:-1;}    /* ↷ 다시실행 */
     #stage{padding:4px;}
     footer{padding:4px 8px;}
     .hint{font-size:11px; line-height:1.3;}
@@ -200,14 +201,13 @@
 </head>
 <body>
 <div id="app">
-  <header class="collapsed">
+  <header>
     <h1>⚽ 축구 전술 보드</h1>
     <div class="tabs">
       <button id="tabRota" class="tab active">🔄 쿼터</button>
       <button id="tabTactics" class="tab">⚽ 전술</button>
       <button id="tabTraining" class="tab">🏃 훈련</button>
     </div>
-    <button id="toolToggle" class="toolToggle" type="button">🛠 도구 ▾</button>
     <div class="toolbar">
       <span id="tacticsTools" class="toolgrp">
         <label style="font-size:13px;">포메이션
@@ -346,7 +346,7 @@
 
   <div id="benchPanel" class="hidden">
     <div class="benchHead">
-      <span>🔁 후보 벤치 — 아이콘을 <b>교체할 선수 쪽으로</b> 끌어다 놓으면 가장 가까운 같은 팀 선수와 바뀝니다</span>
+      <span>🔁 후보</span>
       <button id="benchClose">✕ 닫기</button>
     </div>
     <div class="benchBody">
@@ -427,18 +427,6 @@ function fit(){
 }
 window.addEventListener('resize', fit);
 
-/* ---------- 폰: 도구 막대 접기/펼치기 ---------- */
-(function(){
-  const tt = document.getElementById('toolToggle');
-  const hdr = document.querySelector('header');
-  if(tt && hdr){
-    tt.addEventListener('click', function(){
-      const collapsed = hdr.classList.toggle('collapsed');
-      tt.textContent = collapsed ? '🛠 도구 ▾' : '🛠 도구 ▴';
-      fit();
-    });
-  }
-})();
 window.addEventListener('orientationchange', function(){ setTimeout(fit, 300); });
 
 /* ---------- 잔디 + 라인 그리기 ---------- */
@@ -1070,12 +1058,7 @@ function dropBenchPlayer(team, idx, cx, cy){
 }
 document.getElementById('benchBtn').onclick=()=>{
   refreshBench();
-  const willOpen = benchPanel.classList.contains('hidden');
   benchPanel.classList.toggle('hidden');
-  if(willOpen){                              // 후보를 열 땐 도구막대를 접어 경기장 확보(폰)
-    const hdr=document.querySelector('header'); if(hdr) hdr.classList.add('collapsed');
-    const tt=document.getElementById('toolToggle'); if(tt) tt.textContent='🛠 도구 ▾';
-  }
   fit();
 };
 document.getElementById('benchClose').onclick=()=>{ benchPanel.classList.add('hidden'); fit(); };
@@ -1385,10 +1368,6 @@ function placeQuarterOnBoard(q){
   // 배치 직후 후보 벤치를 자동으로 열어 바로 교체할 수 있게
   benchPanel.classList.remove('hidden');
   refreshBench();
-  const cap = document.getElementById('caption');
-  const onCnt = (R.gk?1:0) + R.plan[q].on.length;
-  cap.innerHTML = `<b>${q+1}쿼터</b> 배치 완료 (출전 ${onCnt}명) · 후보를 <b>교체할 선수 쪽으로</b> 끌어다 놓으면 바뀝니다`;
-  cap.classList.remove('hidden');
   fit();
   pushHistory();
 }
