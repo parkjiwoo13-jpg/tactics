@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>축구 전술 보드</title>
+<!-- ===== iPhone 홈 화면 앱 설정 (자동 추가) ===== -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="전술보드">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#10241a">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
 <style>
   :root{
     --bg:#10241a; --panel:#16352a; --line:#2f6b4f;
@@ -173,10 +182,11 @@
       -webkit-overflow-scrolling:touch; padding-bottom:3px;}
     .toolbar button, .toolbar select, .toolbar label, .toolbar .sep{flex-shrink:0;}
     /* 그룹 span을 투명 처리 → 버튼이 직접 flex 아이템이 되어 order로 앞에 고정 가능 */
-    #tacticsTools, #trainingTools, #commonTools{display:contents;}
-    #benchBtn{order:-3;}   /* 🔁 후보 : 맨 앞 고정 */
-    #undoBtn{order:-2;}    /* ↶ 되돌리기(선취소) : 그 다음 */
-    #redoBtn{order:-1;}    /* ↷ 다시실행 */
+    #tacticsTools, #commonTools{display:contents;}
+    #benchBtn{order:-4;}      /* 🔁 후보 : 맨 앞 고정 */
+    #randomSubBtn{order:-3;}  /* 🎲 랜덤교체 */
+    #undoBtn{order:-2;}       /* ↶ 되돌리기(선취소) */
+    #redoBtn{order:-1;}       /* ↷ 다시실행 */
     #stage{padding:4px;}
     footer{padding:4px 8px;}
     .hint{font-size:11px; line-height:1.3;}
@@ -206,7 +216,6 @@
     <div class="tabs">
       <button id="tabRota" class="tab active">🔄 쿼터</button>
       <button id="tabTactics" class="tab">⚽ 전술</button>
-      <button id="tabTraining" class="tab">🏃 훈련</button>
     </div>
     <div class="toolbar">
       <span id="tacticsTools" class="toolgrp">
@@ -229,13 +238,7 @@
         <label style="font-size:13px;">원정색<input type="color" id="awayColor" value="#1c1c1c"></label>
         <button id="rosterBtn">📋 선수명단</button>
         <button id="benchBtn">🔁 후보</button>
-      </span>
-      <span id="trainingTools" class="toolgrp" style="display:none;">
-        <button id="addHome">🧍 선수(홈)</button>
-        <button id="addAway">🧍 선수(원정)</button>
-        <button id="addBall">⚽ 공</button>
-        <button id="addCone">🔺 고깔</button>
-        <span style="font-size:12px; color:#9fc7b3;">(추가 항목은 더블클릭 시 삭제)</span>
+        <button id="randomSubBtn">🎲 랜덤교체</button>
       </span>
       <span id="commonTools" class="toolgrp">
       <span class="sep"></span>
@@ -260,19 +263,6 @@
       <button id="undoBtn">↶ 되돌리기</button>
       <button id="redoBtn">↷ 다시실행</button>
       <button id="clearDraw">선 지우기</button>
-      <span class="sep"></span>
-      <button id="toggleLbl">이름 표시</button>
-      <button id="saveBtn">🖼️ 이미지 저장</button>
-      <span class="sep"></span>
-      <button id="saveSitBtn">💾 상황저장</button>
-      <select id="loadSel"><option value="">저장목록…</option></select>
-      <button id="loadBtn">📂 불러오기</button>
-      <button id="delBtn">🗑 삭제</button>
-      <span class="sep"></span>
-      <select id="presetSel"><option value="">예시 도안…</option></select>
-      <button id="presetBtn">▶ 예시 적용</button>
-      <span class="sep"></span>
-      <button id="resetBtn">전체 초기화</button>
       </span>
     </div>
   </header>
@@ -374,8 +364,7 @@ let dragMoved = false;        // 드래그 중 실제 이동 여부
 let history = [];             // 되돌리기/다시실행 기록
 let histIndex = -1;
 let tokens = [];              // 선수/공/고깔 객체
-let activeTab = 'tactics';    // 'tactics' | 'training'
-let addCounter = 0;           // 훈련탭에서 추가한 선수 번호
+let activeTab = 'tactics';    // 'rota' | 'tactics'
 
 /* ---------- 포메이션 정의 (홈 기준, y가 클수록 자기 골문=아래) ---------- */
 const F = {
@@ -415,7 +404,7 @@ function fit(){
   if(benchOpenMobile){                       // 하단 후보 시트 높이만큼 경기장 축소
     availH = Math.max(60, availH - bp.getBoundingClientRect().height - 6);
   }
-  const ar = (activeTab==='training') ? 1.5 : (2/3);   // 가로/세로 비율
+  const ar = 2/3;   // 세로 풀코트 가로/세로 비율
   let w = availW, h = w/ar;
   if(h > availH){ h = availH; w = h*ar; }              // 세로가 넘치면 높이 기준으로
   wrap.style.width  = Math.round(w)+'px';
@@ -431,7 +420,6 @@ window.addEventListener('orientationchange', function(){ setTimeout(fit, 300); }
 
 /* ---------- 잔디 + 라인 그리기 ---------- */
 function drawPitch(ctx,w,h){
-  if(activeTab==='training'){ return drawHalfPitch(ctx,w,h); }
   // 잔디 줄무늬
   const bands = 8, bh = h/bands;
   for(let i=0;i<bands;i++){
@@ -459,47 +447,6 @@ function drawPitch(ctx,w,h){
   for(const sy of [m+boxH*0.66, h-m-boxH*0.66]){
     ctx.beginPath(); ctx.arc(w/2, sy, w*0.008, 0, Math.PI*2); ctx.fill();
   }
-}
-
-/* ---------- 반코트(가로) — 훈련 탭 ---------- */
-function drawHalfPitch(ctx,w,h){
-  const u = Math.min(w,h);
-  // 잔디 세로 줄무늬
-  const bands = 9, bw = w/bands;
-  for(let i=0;i<bands;i++){
-    ctx.fillStyle = i%2? '#2a7549' : '#2e7d4f';
-    ctx.fillRect(i*bw, 0, bw+1, h);
-  }
-  ctx.strokeStyle = 'rgba(255,255,255,.85)';
-  ctx.lineWidth = Math.max(2, u*0.008);
-  ctx.fillStyle = '#fff';
-  const m = u*0.05;
-  const L = m, R = w-m, T = m, B = h-m;          // 경기장 경계
-  ctx.strokeRect(L, T, R-L, B-T);                // 외곽 (오른쪽 변 = 하프라인)
-
-  // 왼쪽 골대/페널티 박스
-  const fieldH = B-T, fieldW = R-L;
-  const pbDepth = fieldW*0.30, pbH = fieldH*0.58;
-  const gaDepth = fieldW*0.11, gaH = fieldH*0.30;
-  const goalH = fieldH*0.16, goalD = u*0.012;
-  const cy = (T+B)/2;
-  ctx.strokeRect(L, cy-pbH/2, pbDepth, pbH);             // 페널티 박스
-  ctx.strokeRect(L, cy-gaH/2, gaDepth, gaH);             // 골 에어리어
-  ctx.strokeRect(L-goalD, cy-goalH/2, goalD, goalH);     // 골대
-
-  // 페널티 스팟 + 아크(박스 바깥쪽 부분만)
-  const spotX = L + pbDepth*0.62;
-  ctx.beginPath(); ctx.arc(spotX, cy, u*0.01, 0, Math.PI*2); ctx.fill();
-  const arcR = fieldH*0.20;
-  const a = Math.acos(Math.min(1,(L+pbDepth - spotX)/arcR));   // 박스 선과 만나는 각도
-  ctx.beginPath();
-  ctx.arc(spotX, cy, arcR, a, -a, true);
-  ctx.stroke();
-
-  // 오른쪽: 하프라인 위 센터서클(반원, 왼쪽으로 볼록)
-  const cr = fieldH*0.28;
-  ctx.beginPath(); ctx.arc(R, cy, cr, Math.PI/2, Math.PI*1.5); ctx.stroke();
-  ctx.beginPath(); ctx.arc(R, cy, u*0.01, 0, Math.PI*2); ctx.fill();
 }
 
 /* ---------- 선수/공/고깔 생성 ---------- */
@@ -535,15 +482,13 @@ function makeToken(team, x, y, label, num, isBall=false, idx=-1, kind=null){
 
 function onTokenDblClick(t){
   if(t.kind==='text'){
-    if(activeTab==='training'){ removeToken(t); return; }
     const v = prompt('글자 수정 (비우고 확인하면 삭제)', t.label);
     if(v===null) return;
     if(v.trim()===''){ removeToken(t); return; }
     t.label=v; t.el.textContent=v;
     return;
   }
-  if(activeTab==='training'){ removeToken(t); }
-  else if(t.kind==='player' && t.idx>=0){ editToken(t); }
+  if(t.kind==='player' && t.idx>=0){ editToken(t); }
 }
 function removeToken(t){
   t.el.remove();
@@ -803,52 +748,6 @@ function applyLabels(){
   document.querySelectorAll('.token .lbl').forEach(l=> l.style.display = showLabels?'block':'none');
 }
 
-/* ---------- 이미지 저장 ---------- */
-function saveImage(){
-  const w=pitch.width, h=pitch.height;
-  const out=document.createElement('canvas'); out.width=w; out.height=h;
-  const o=out.getContext('2d');
-  drawPitch(o,w,h);
-  for(const s of strokes) drawArrow(o,s,w,h);
-  // 선수
-  o.textAlign='center'; o.textBaseline='middle';
-  for(const t of tokens){
-    const px=t.x*w, py=t.y*h, rad = (t.kind==='player'? w*0.035 : w*0.026);
-    if(t.kind==='ball'){
-      o.font = `${Math.round(rad*2.4)}px sans-serif`;
-      o.fillText('⚽', px, py);
-      continue;
-    }
-    if(t.kind==='cone'){
-      o.font = `${Math.round(rad*2.1)}px sans-serif`;
-      o.fillText('🔺', px, py);
-      continue;
-    }
-    if(t.kind==='text'){
-      o.font = `bold ${Math.round(w*0.021)}px sans-serif`;
-      const tw = o.measureText(t.label).width;
-      const padX = w*0.012, bh = w*0.034;
-      o.fillStyle='rgba(10,30,22,.85)';
-      o.fillRect(px-tw/2-padX, py-bh/2, tw+padX*2, bh);
-      o.fillStyle='#fff'; o.fillText(t.label, px, py);
-      continue;
-    }
-    o.beginPath(); o.arc(px,py,rad,0,Math.PI*2);
-    o.fillStyle = (t.team==='home'? homeColor : awayColor);
-    o.fill(); o.lineWidth=2; o.strokeStyle='rgba(255,255,255,.85)'; o.stroke();
-    {
-      // 숫자 등번호는 크게, '용병' 같은 글자는 원 안에 들어가게 작게
-      o.fillStyle='#fff'; o.font=`bold ${Math.round(rad*(/^\d*$/.test(String(t.num))?0.9:0.6))}px sans-serif`;
-      o.fillText(t.num, px, py);
-      if(showLabels && t.label){
-        o.fillStyle='#fff'; o.font=`bold ${Math.round(rad*0.6)}px sans-serif`;
-        o.fillText(t.label, px, py+rad*1.7);
-      }
-    }
-  }
-  const a=document.createElement('a');
-  a.download='축구전술.png'; a.href=out.toDataURL('image/png'); a.click();
-}
 
 /* ---------- 선수 명단 패널 ---------- */
 function buildRosterList(team, listId){
@@ -1061,6 +960,46 @@ document.getElementById('benchBtn').onclick=()=>{
   benchPanel.classList.toggle('hidden');
   fit();
 };
+/* 🎲 랜덤교체 — 누를 때마다 후보(그 주 쉬는 참가자) 중 한 명을 필드의 무작위 홈 선수와 맞바꿈.
+   후보가 없으면 필드 두 명의 자리만 무작위로 바꿈. 계속 누르면 계속 바뀜. */
+function randomSub(){
+  if(activeTab!=='tactics') document.getElementById('tabTactics').click();   // 전술 보드로
+  const field = tokens.filter(t=>t.kind==='player' && t.team==='home');
+  if(field.length===0) return;
+  // 후보 풀: weekSquad(그 주 참가자) 모드면 이름 기준, 아니면 명단 idx 기준
+  let pool;
+  if(weekSquad){
+    const on = new Set(field.map(t=>t.label));
+    pool = weekSquad.filter(p=>!on.has(p.name));
+  } else {
+    const on = onFieldIdx('home');
+    pool = [];
+    roster.home.forEach((p,idx)=>{ if(!on.has(idx) && (p.name||'').trim()) pool.push({idx, name:p.name, num:p.num}); });
+  }
+  const pick = a => a[Math.floor(Math.random()*a.length)];
+  if(pool.length>0){                                   // 후보 ↔ 필드 무작위 교체
+    const t = pick(field), p = pick(pool);
+    if(weekSquad){
+      t.label = p.name; t.num = p.num||'용병'; t.idx = -1;
+      t.el.firstChild.textContent = t.num;
+      const lbl = t.el.querySelector('.lbl'); if(lbl) lbl.textContent = p.name;
+      t.el.classList.toggle('guest', !/^\d+$/.test(String(t.num)));
+    } else {
+      t.idx = p.idx; refreshToken(t);
+    }
+  } else if(field.length>=2){                           // 후보 없으면 필드 두 명 자리 맞바꿈
+    const a = pick(field); let b = pick(field); let guard=0;
+    while(b===a && guard++<20) b = pick(field);
+    if(b===a) return;
+    const tx=a.x, ty=a.y; a.x=b.x; a.y=b.y; b.x=tx; b.y=ty;
+    a.el.style.left=(a.x*100)+'%'; a.el.style.top=(a.y*100)+'%';
+    b.el.style.left=(b.x*100)+'%'; b.el.style.top=(b.y*100)+'%';
+  } else return;
+  applyLabels();
+  if(!benchPanel.classList.contains('hidden')) refreshBench();
+  pushHistory();
+}
+document.getElementById('randomSubBtn').onclick = randomSub;
 document.getElementById('benchClose').onclick=()=>{ benchPanel.classList.add('hidden'); fit(); };
 
 /* ---------- 쿼터 로테이션 (회원 균등 분배) ---------- */
@@ -1424,8 +1363,6 @@ function exportRosterFile(){
   setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
   alert('명단이 들어간 배포본(전술보드_명단포함.html)을 저장했습니다.\n이 파일을 전달하면 받는 분도 같은 명단이 보입니다.');
 }
-function getSaves(){ try{ return JSON.parse(localStorage.getItem('tb_saves')||'{}'); }catch(e){ return {}; } }
-function setSaves(o){ try{ localStorage.setItem('tb_saves', JSON.stringify(o)); }catch(e){} }
 
 /* 현재 보드 상태를 객체로 추출 */
 function snapshot(){
@@ -1452,41 +1389,6 @@ function restore(s, keepHistory){
   if(!keepHistory) resetHistory();          // 되돌리기(undo)에서는 기록을 유지
 }
 
-function refreshLoadSelect(){
-  const sel = document.getElementById('loadSel');
-  const saves = getSaves();
-  sel.innerHTML = '<option value="">저장목록…</option>';
-  Object.keys(saves).forEach(n=>{
-    const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o);
-  });
-}
-function saveSituation(){
-  const def = '전술 ' + (Object.keys(getSaves()).length + 1);
-  const name = prompt('저장할 상황의 이름을 입력하세요', def);
-  if(!name) return;
-  const saves = getSaves();
-  saves[name.trim()] = snapshot();
-  setSaves(saves);
-  refreshLoadSelect();
-  document.getElementById('loadSel').value = name.trim();
-  alert('저장되었습니다: ' + name.trim());
-}
-function loadSituation(){
-  const n = document.getElementById('loadSel').value;
-  if(!n){ alert('불러올 저장 항목을 목록에서 먼저 선택하세요.'); return; }
-  const saves = getSaves();
-  if(saves[n]) restore(saves[n]);
-}
-function deleteSituation(){
-  const n = document.getElementById('loadSel').value;
-  if(!n){ alert('삭제할 저장 항목을 목록에서 먼저 선택하세요.'); return; }
-  if(!confirm(`'${n}' 저장을 삭제할까요?`)) return;
-  const saves = getSaves(); delete saves[n]; setSaves(saves);
-  refreshLoadSelect();
-}
-document.getElementById('saveSitBtn').onclick = saveSituation;
-document.getElementById('loadBtn').onclick = loadSituation;
-document.getElementById('delBtn').onclick = deleteSituation;
 document.getElementById('rosterSaveBtn').onclick = ()=>{ saveRoster(); alert('명단이 저장되었습니다.'); };
 document.getElementById('rosterExportBtn').onclick = exportRosterFile;
 
@@ -1551,32 +1453,21 @@ document.getElementById('addText').onclick=()=>{
   pushHistory();
 };
 document.getElementById('clearDraw').onclick=()=>{ strokes=[]; selected=null; redrawStrokes(); pushHistory(); };
-document.getElementById('toggleLbl').onclick=()=>{ showLabels=!showLabels; applyLabels(); };
-document.getElementById('saveBtn').onclick=saveImage;
-document.getElementById('resetBtn').onclick=()=>{
-  tokens.forEach(t=>t.el.remove()); tokens=[]; strokes=[]; selected=null; redrawStrokes();
-  document.getElementById('caption').classList.add('hidden');
-  if(activeTab==='tactics'){
-    placeFormation('home','442'); placeFormation('away','442'); ensureBall();
-  }
-  resetHistory(); refreshBench();
-};
 
-/* ---------- 탭 전환 (전술 / 훈련) ---------- */
-const scenes = { tactics:{tokens:[],strokes:[]}, training:{tokens:[],strokes:[]} };
+/* ---------- 탭 전환 (쿼터 / 전술) ---------- */
+const scenes = { tactics:{tokens:[],strokes:[]} };
 function serializeTokens(){
   return tokens.map(t=>({team:t.team, x:t.x, y:t.y, num:t.num, label:t.label, isBall:t.isBall, kind:t.kind, idx:t.idx}));
 }
 function rebuildTokens(arr){
   (arr||[]).forEach(d=> makeToken(d.team, d.x, d.y, d.label, d.num, d.isBall, d.idx, d.kind));
 }
-const BOARD_TABS = {tactics:1, training:1};   // 보드(토큰)를 쓰는 탭
 function switchTab(tab){
   if(tab===activeTab) return;
-  // 현재가 보드 탭이면 상태 보관
-  if(BOARD_TABS[activeTab]){
-    scenes[activeTab].tokens = serializeTokens();
-    scenes[activeTab].strokes = strokes;
+  // 현재가 전술(보드) 탭이면 상태 보관
+  if(activeTab==='tactics'){
+    scenes.tactics.tokens = serializeTokens();
+    scenes.tactics.strokes = strokes;
   }
   tokens.forEach(t=>t.el.remove()); tokens=[];
   activeTab = tab;
@@ -1585,12 +1476,10 @@ function switchTab(tab){
   // 탭 하이라이트
   document.getElementById('tabRota').classList.toggle('active', tab==='rota');
   document.getElementById('tabTactics').classList.toggle('active', tab==='tactics');
-  document.getElementById('tabTraining').classList.toggle('active', tab==='training');
   // 도구 막대 표시(쿼터 탭은 도구 숨김)
   const show = (id,on)=>{ const e=document.getElementById(id); if(e) e.style.display = on?'':'none'; };
-  show('tacticsTools',  tab==='tactics');
-  show('trainingTools', tab==='training');
-  show('commonTools',   tab!=='rota');
+  show('tacticsTools', tab==='tactics');
+  show('commonTools',  tab!=='rota');
   // 쿼터 탭이면 보드 화면을 숨기고 로테이션 워크스페이스만 표시
   document.getElementById('app').classList.toggle('rotaActive', tab==='rota');
 
@@ -1602,231 +1491,15 @@ function switchTab(tab){
     fit(); resetHistory();
     return;
   }
-  // 보드 탭 로드 (훈련=반코트 가로 / 전술=세로 풀코트)
-  strokes = scenes[tab].strokes || []; selected = null;
-  wrap.classList.toggle('training', tab==='training');
+  // 전술(보드) 탭 로드
+  strokes = scenes.tactics.strokes || []; selected = null;
   fit();                                   // 캔버스 크기·필드 다시 그림
-  rebuildTokens(scenes[tab].tokens);
+  rebuildTokens(scenes.tactics.tokens);
   redrawStrokes(); applyLabels(); resetHistory();
-  if(tab==='training') benchPanel.classList.add('hidden');   // 후보 벤치는 전술탭 전용
-  else refreshBench();
+  refreshBench();
 }
-document.getElementById('tabRota').onclick     = ()=>switchTab('rota');
-document.getElementById('tabTactics').onclick  = ()=>switchTab('tactics');
-document.getElementById('tabTraining').onclick = ()=>switchTab('training');
-
-/* ---------- 훈련탭: 선수/공/고깔 추가 ---------- */
-function addAt(){ // 살짝 어긋나게 배치(겹침 방지)
-  const k = addCounter % 8;
-  return { x: 0.40 + (k%4)*0.06, y: 0.42 + Math.floor(k/4)*0.10 };
-}
-document.getElementById('addHome').onclick = ()=>{ addCounter++; const p=addAt(); makeToken('home', p.x, p.y, '', String(addCounter), false, -1, 'player'); pushHistory(); };
-document.getElementById('addAway').onclick = ()=>{ addCounter++; const p=addAt(); makeToken('away', p.x, p.y, '', String(addCounter), false, -1, 'player'); pushHistory(); };
-document.getElementById('addBall').onclick = ()=>{ addCounter++; const p=addAt(); makeToken('none', p.x, p.y, '', '', true, -1, 'ball'); pushHistory(); };
-document.getElementById('addCone').onclick = ()=>{ addCounter++; const p=addAt(); makeToken('none', p.x, p.y, '', '', false, -1, 'cone'); pushHistory(); };
-
-/* ---------- 예시 도안(프리셋) ----------
-   tab: 'tactics'(세로 풀코트) | 'training'(가로 반코트)
-   tokens: {team, x, y, num, label, kind:'player'|'ball'|'cone'}
-   strokes: {color, type:'arrow'|'line'|'dashed'|'dashedArrow', pts:[{x,y}...]}
-   ※ 새 상황/훈련을 말로 설명해주시면 여기에 항목을 추가해 드립니다. */
-const PRESETS = {
-  '훈련: 패스 삼각형(론도)': {
-    tab:'training',
-    tokens:[
-      {team:'home', x:0.34, y:0.30, num:'1', kind:'player'},
-      {team:'home', x:0.55, y:0.74, num:'2', kind:'player'},
-      {team:'home', x:0.73, y:0.34, num:'3', kind:'player'},
-      {team:'away', x:0.55, y:0.50, num:'X', kind:'player'},   // 가운데 수비
-      {team:'none', x:0.37, y:0.33, kind:'ball'},
-      {team:'none', x:0.30, y:0.18, kind:'cone'},
-      {team:'none', x:0.78, y:0.22, kind:'cone'},
-      {team:'none', x:0.55, y:0.85, kind:'cone'},
-    ],
-    strokes:[
-      {color:'#f4d35e', type:'arrow', pts:[{x:0.37,y:0.33},{x:0.53,y:0.70}]},
-      {color:'#f4d35e', type:'arrow', pts:[{x:0.57,y:0.72},{x:0.71,y:0.38}]},
-      {color:'#f4d35e', type:'arrow', pts:[{x:0.71,y:0.34},{x:0.39,y:0.31}]},
-    ]
-  },
-
-  /* ===== 스트라이커(9번) 훈련 3종 — 훈련탭 반코트, 골대=왼쪽, 공격방향 ← ===== */
-  '훈련: ① 채널 침투 + 컷백 마무리': {
-    tab:'training',
-    title:'채널 침투 + 컷백 마무리',
-    desc:'⑨는 가운데서 대기 → 측면(⑦)이 돌파하는 <b>그 순간</b> 센터백–풀백 사이(고깔)로 <b>대각 침투</b> → 라인보다 <b>반 발 뒤(컷백 존)</b>로 빠져 첫 터치 없이 <b>원터치 마무리</b>',
-    tokens:[
-      {team:'home', x:0.70, y:0.50, num:'6', label:'전개', kind:'player'},
-      {team:'home', x:0.52, y:0.22, num:'7', label:'측면', kind:'player'},
-      {team:'home', x:0.52, y:0.56, num:'9', label:'ST', kind:'player'},
-      {team:'away', x:0.36, y:0.46, num:'4', label:'CB', kind:'player'},
-      {team:'away', x:0.06, y:0.50, num:'1', label:'GK', kind:'player'},
-      {team:'none', x:0.67, y:0.50, kind:'ball'},
-      {team:'none', x:0.40, y:0.34, kind:'cone'},
-      {team:'none', x:0.40, y:0.44, kind:'cone'},
-    ],
-    strokes:[
-      {color:'#f4d35e', type:'arrow',       pts:[{x:0.66,y:0.49},{x:0.53,y:0.24}]},                 // ⑥→⑦ 전개
-      {color:'#f4d35e', type:'dashedArrow', pts:[{x:0.51,y:0.22},{x:0.20,y:0.20}]},                 // ⑦ 바이라인 돌파
-      {color:'#3ad07e', type:'dashedArrow', pts:[{x:0.52,y:0.55},{x:0.40,y:0.42},{x:0.25,y:0.52}]}, // ⑨ 채널 침투(고깔 사이)→스팟 뒤
-      {color:'#f4d35e', type:'arrow',       pts:[{x:0.20,y:0.22},{x:0.25,y:0.49}]},                 // 컷백
-      {color:'#ff6b6b', type:'arrow',       pts:[{x:0.24,y:0.50},{x:0.07,y:0.47}]},                 // 슛
-    ]
-  },
-  '훈련: ② 드롭→레이오프→재침투 마무리': {
-    tab:'training',
-    title:'드롭 → 레이오프 → 재침투 (give-and-go)',
-    desc:'⑨ 내려와 등지고 받기 → ⑧에게 <b>한 번에 레이오프</b> → 멈추지 말고 곧바로 <b>등 뒤로 재침투</b> → 스루패스 받아 마무리. 핵심은 "내주고 멈추지 않기"',
-    tokens:[
-      {team:'home', x:0.76, y:0.50, num:'6', label:'전개', kind:'player'},
-      {team:'home', x:0.46, y:0.50, num:'9', label:'ST', kind:'player'},
-      {team:'home', x:0.56, y:0.66, num:'8', label:'지원', kind:'player'},
-      {team:'away', x:0.39, y:0.50, num:'4', label:'CB', kind:'player'},
-      {team:'away', x:0.06, y:0.50, num:'1', label:'GK', kind:'player'},
-      {team:'none', x:0.73, y:0.50, kind:'ball'},
-    ],
-    strokes:[
-      {color:'#f4d35e', type:'arrow',       pts:[{x:0.72,y:0.50},{x:0.49,y:0.50}]},                 // ⑥→⑨ 발밑
-      {color:'#f4d35e', type:'arrow',       pts:[{x:0.46,y:0.52},{x:0.55,y:0.63}]},                 // ⑨ 레이오프→⑧
-      {color:'#3ad07e', type:'dashedArrow', pts:[{x:0.45,y:0.49},{x:0.34,y:0.40},{x:0.23,y:0.43}]}, // ⑨ 등 뒤 재침투
-      {color:'#f4d35e', type:'arrow',       pts:[{x:0.55,y:0.62},{x:0.25,y:0.43}]},                 // ⑧ 스루패스
-      {color:'#ff6b6b', type:'arrow',       pts:[{x:0.23,y:0.44},{x:0.07,y:0.48}]},                 // 슛
-    ]
-  },
-  '훈련: ③ 전방 압박 — 커버 섀도': {
-    tab:'training',
-    title:'전방 압박: 커버 섀도 (first defender)',
-    desc:'GK→CB로 가는 <b>그 순간</b> 곡선으로 달려 ⑥번을 등 뒤 <b>그림자에 가두고</b>(흰 점선=차단된 패스길) 한쪽만 열어 압박 → 탈취하면 그대로 마무리. "나갈 거면 100%, 6번 레인부터 닫기"',
-    tokens:[
-      {team:'away', x:0.07, y:0.50, num:'1', label:'GK', kind:'player'},
-      {team:'away', x:0.20, y:0.34, num:'4', label:'CB', kind:'player'},
-      {team:'away', x:0.20, y:0.66, num:'5', label:'CB', kind:'player'},
-      {team:'away', x:0.36, y:0.50, num:'6', label:'6번', kind:'player'},
-      {team:'home', x:0.46, y:0.48, num:'9', label:'ST', kind:'player'},
-      {team:'none', x:0.09, y:0.50, kind:'ball'},
-    ],
-    strokes:[
-      {color:'#f4d35e', type:'arrow',       pts:[{x:0.11,y:0.49},{x:0.20,y:0.36}]},                 // GK→CB
-      {color:'#3ad07e', type:'dashedArrow', pts:[{x:0.46,y:0.48},{x:0.36,y:0.40},{x:0.27,y:0.38}]}, // ⑨ 곡선 압박(섀도 유지)
-      {color:'#ffffff', type:'dashed',      pts:[{x:0.21,y:0.36},{x:0.35,y:0.49}]},                 // 차단된 패스길(CB→6번)
-      {color:'#ff6b6b', type:'dashedArrow', pts:[{x:0.24,y:0.39},{x:0.08,y:0.47}]},                 // 탈취 후 마무리
-    ]
-  },
-
-  '전술: 우측 측면 역습': {
-    tab:'tactics',
-    tokens:[
-      {team:'home', x:0.50, y:0.92, num:'1', label:'GK', kind:'player'},
-      {team:'home', x:0.30, y:0.74, num:'4', kind:'player'},
-      {team:'home', x:0.78, y:0.66, num:'2', label:'RB', kind:'player'},
-      {team:'home', x:0.55, y:0.58, num:'8', kind:'player'},
-      {team:'home', x:0.82, y:0.40, num:'7', label:'RW', kind:'player'},
-      {team:'home', x:0.45, y:0.34, num:'9', label:'ST', kind:'player'},
-      {team:'away', x:0.40, y:0.30, num:'5', kind:'player'},
-      {team:'away', x:0.60, y:0.28, num:'6', kind:'player'},
-      {team:'none', x:0.50, y:0.90, kind:'ball'},
-    ],
-    strokes:[
-      {color:'#f4d35e', type:'arrow', pts:[{x:0.50,y:0.90},{x:0.77,y:0.66}]},   // GK→RB 전개
-      {color:'#f4d35e', type:'arrow', pts:[{x:0.79,y:0.64},{x:0.82,y:0.42}]},   // RB→RW 전진
-      {color:'#3ad07e', type:'dashedArrow', pts:[{x:0.46,y:0.34},{x:0.62,y:0.20}]}, // ST 침투
-      {color:'#f4d35e', type:'arrow', pts:[{x:0.82,y:0.41},{x:0.60,y:0.22}]},   // RW→ST 크로스
-    ]
-  },
-
-  /* ===== 오프사이드 설명 (검정=수비, 살구=공격, 공격 방향 ↑) ===== */
-  '오프사이드 ① 트랩(옳은 수비)': {
-    tab:'tactics', hideNumbers:true,
-    title:'오프사이드 트랩',
-    desc:'수비 4명이 킥 직전 동시에 <b>라인을 올려</b> 공격수를 라인 뒤(골 쪽)에 남긴다 → 명백한 오프사이드',
-    tokens:[
-      {team:'home', x:0.50, y:0.07, num:'1', kind:'player'},
-      {team:'home', x:0.24, y:0.46, num:'2', kind:'player'},
-      {team:'home', x:0.42, y:0.46, num:'3', kind:'player'},
-      {team:'home', x:0.58, y:0.46, num:'4', kind:'player'},
-      {team:'home', x:0.76, y:0.46, num:'5', kind:'player'},
-      {team:'away', x:0.50, y:0.40, num:'9', kind:'player'},
-      {team:'away', x:0.50, y:0.66, num:'10', kind:'player'},
-      {team:'none', x:0.50, y:0.69, kind:'ball'},
-    ],
-    strokes:[
-      {color:'#ffffff', type:'dashed', pts:[{x:0.06,y:0.46},{x:0.94,y:0.46}]},      // 라인(기준)
-      {color:'#3ad07e', type:'arrow', pts:[{x:0.24,y:0.35},{x:0.24,y:0.445}]},      // 전진(옳음)
-      {color:'#3ad07e', type:'arrow', pts:[{x:0.42,y:0.35},{x:0.42,y:0.445}]},
-      {color:'#3ad07e', type:'arrow', pts:[{x:0.58,y:0.35},{x:0.58,y:0.445}]},
-      {color:'#3ad07e', type:'arrow', pts:[{x:0.76,y:0.35},{x:0.76,y:0.445}]},
-      {color:'#ffffff', type:'arrow', pts:[{x:0.50,y:0.67},{x:0.50,y:0.435}]},      // 스루패스(이동)
-    ]
-  },
-  '오프사이드 ② 동일선상(틀린 수비)': {
-    tab:'tactics', hideNumbers:true,
-    title:'동일선상은 위험',
-    desc:'라인을 안 올리고 <b>같은 선</b>에서 손만 들면 온사이드 → 뒷공간으로 침투당해 실점',
-    tokens:[
-      {team:'home', x:0.50, y:0.07, num:'1', kind:'player'},
-      {team:'home', x:0.24, y:0.42, num:'2', kind:'player'},
-      {team:'home', x:0.42, y:0.42, num:'3', kind:'player'},
-      {team:'home', x:0.58, y:0.42, num:'4', kind:'player'},
-      {team:'home', x:0.76, y:0.42, num:'5', kind:'player'},
-      {team:'away', x:0.50, y:0.42, num:'9', kind:'player'},
-      {team:'away', x:0.50, y:0.66, num:'10', kind:'player'},
-      {team:'none', x:0.50, y:0.69, kind:'ball'},
-    ],
-    strokes:[
-      {color:'#ffffff', type:'dashed', pts:[{x:0.06,y:0.42},{x:0.94,y:0.42}]},      // 동일 라인(기준)
-      {color:'#ffffff', type:'arrow', pts:[{x:0.50,y:0.67},{x:0.50,y:0.22}]},       // 스루패스(이동)
-      {color:'#ff6b6b', type:'dashedArrow', pts:[{x:0.52,y:0.42},{x:0.52,y:0.24}]}, // 침투(틀림/위험)
-    ]
-  },
-  '오프사이드 ③ 일반 수비(옳은 수비)': {
-    tab:'tactics', hideNumbers:true,
-    title:'일반 수비',
-    desc:'침투에 맞춰 한 명이 <b>미리 내려가</b> 따라붙고, 나머지가 그 선수에 <b>라인을 맞춘다</b>',
-    tokens:[
-      {team:'home', x:0.50, y:0.07, num:'1', kind:'player'},
-      {team:'home', x:0.58, y:0.26, num:'4', kind:'player'},
-      {team:'home', x:0.26, y:0.31, num:'2', kind:'player'},
-      {team:'home', x:0.42, y:0.31, num:'3', kind:'player'},
-      {team:'home', x:0.76, y:0.31, num:'5', kind:'player'},
-      {team:'away', x:0.58, y:0.40, num:'9', kind:'player'},
-      {team:'away', x:0.50, y:0.62, num:'10', kind:'player'},
-      {team:'none', x:0.50, y:0.64, kind:'ball'},
-    ],
-    strokes:[
-      {color:'#ffffff', type:'dashedArrow', pts:[{x:0.58,y:0.40},{x:0.58,y:0.21}]}, // 공격수 침투(이동)
-      {color:'#3ad07e', type:'arrow', pts:[{x:0.58,y:0.355},{x:0.58,y:0.265}]},     // 커버 내려섬(옳음)
-      {color:'#3ad07e', type:'arrow', pts:[{x:0.26,y:0.355},{x:0.26,y:0.315}]},
-      {color:'#3ad07e', type:'arrow', pts:[{x:0.42,y:0.355},{x:0.42,y:0.315}]},
-      {color:'#3ad07e', type:'arrow', pts:[{x:0.76,y:0.355},{x:0.76,y:0.315}]},
-      {color:'#ffffff', type:'arrow', pts:[{x:0.55,y:0.625},{x:0.58,y:0.30}]},      // 스루패스(이동)
-    ]
-  }
-};
-function refreshPresetSelect(){
-  const sel = document.getElementById('presetSel');
-  sel.innerHTML = '<option value="">예시 도안…</option>';
-  Object.keys(PRESETS).forEach(n=>{ const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); });
-}
-function loadPreset(name){
-  const p = PRESETS[name]; if(!p) return;
-  switchTab(p.tab || 'tactics');
-  tokens.forEach(t=>t.el.remove()); tokens=[];
-  rebuildTokens((p.tokens||[]).map(d=>({team:d.team||'none', x:d.x, y:d.y,
-      num:(p.hideNumbers ? '' : (d.num||'')), label:d.label||'',
-      isBall:d.kind==='ball', kind:d.kind||'player', idx:-1})));
-  strokes = JSON.parse(JSON.stringify(p.strokes||[])); selected=null;
-  redrawStrokes(); applyLabels(); resetHistory();
-  const cap = document.getElementById('caption');
-  if(p.title || p.desc){
-    cap.innerHTML = (p.title?`<b>${p.title}</b>`:'') + (p.desc?`<br>${p.desc}`:'');
-    cap.classList.remove('hidden');
-  } else { cap.classList.add('hidden'); }
-}
-document.getElementById('presetBtn').onclick = ()=>{
-  const n = document.getElementById('presetSel').value;
-  if(!n){ alert('적용할 예시 도안을 목록에서 선택하세요.'); return; }
-  loadPreset(n);
-};
+document.getElementById('tabRota').onclick    = ()=>switchTab('rota');
+document.getElementById('tabTactics').onclick = ()=>switchTab('tactics');
 
 /* ---------- 시작 ---------- */
 loadRoster();                 // 저장해둔 명단 복원
@@ -1836,10 +1509,16 @@ placeFormation('away','442');
 ensureBall();
 buildRosterPanel();
 refreshBench();               // 후보 벤치 목록 채우기
-refreshLoadSelect();          // 저장된 상황 목록 채우기
-refreshPresetSelect();        // 예시 도안 목록 채우기
 resetHistory();               // 되돌리기 기록 초기화
 switchTab('rota');            // 앱을 켜면 '쿼터 로테이션' 화면으로 시작(메인 기능)
+</script>
+<script>
+/* 오프라인 작동: 처음 1회 접속 후 인터넷 없이 사용 가능 */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
 </script>
 </body>
 </html>
