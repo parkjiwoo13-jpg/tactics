@@ -310,7 +310,7 @@
             </label>
           </div>
           <div class="rotaOpts">
-            <label class="rotaGkLbl"><input type="checkbox" id="rotaPosRotate" checked> 포지션도 로테이션 <span class="rotaMini">(쿼터마다 수비·미드·공격 자리 바꿔 배분)</span></label>
+            <label class="rotaGkLbl"><input type="checkbox" id="rotaPosRotate" checked> 포지션도 로테이션 <span class="rotaMini">(보드에 배치하면 쿼터마다 서는 자리가 바뀜)</span></label>
           </div>
           <button id="rotaCalc" class="rotaWide rotaPrimary">⚖️ 균등 분배하기</button>
         </div>
@@ -351,7 +351,7 @@
     </div>
     <div class="benchBody">
       <div class="benchTeam"><span class="benchLbl" style="color:var(--home)">홈 후보</span><div id="benchHome" class="benchRow"></div></div>
-      <div class="benchTeam"><span class="benchLbl" style="color:var(--away)">원정 후보</span><div id="benchAway" class="benchRow"></div></div>
+      <div class="benchTeam" id="benchAwayTeam"><span class="benchLbl" style="color:var(--away)">원정 후보</span><div id="benchAway" class="benchRow"></div></div>
     </div>
   </div>
 
@@ -530,6 +530,7 @@ function makeToken(team, x, y, label, num, isBall=false, idx=-1, kind=null){
   } else {
     el.textContent = num;
     el.innerHTML += `<span class="lbl">${label||''}</span>`;
+    if(!/^\d+$/.test(String(num))) el.classList.add('guest');   // 등번호가 아닌 '용병' 등은 원 안에 들어가게 작게
   }
   wrap.appendChild(el);
   const t = {el, x, y, team, label:((kind==='player'||kind==='text')?label:''), num, isBall:(kind==='ball'), kind, idx};
@@ -792,6 +793,7 @@ function drawArrow(ctx, s, w, h){
 
 /* ---------- 배치/초기화 ---------- */
 function placeFormation(team, key){
+  weekSquad = null;   // 명단 기반 수동 배치 → 후보 벤치도 전체 명단 방식으로 되돌림
   // 해당 팀 토큰 제거(공 제외)
   tokens = tokens.filter(t=>{ if(t.team===team && !t.isBall){ t.el.remove(); return false;} return true;});
   const coords = F[key];
@@ -923,12 +925,36 @@ function buildBenchRow(team, rowId){
   });
   if(count===0) row.innerHTML = '<span class="benchEmpty">교체 가능한 선수가 없습니다</span>';
 }
-function refreshBench(){
-  buildBenchRow('home','benchHome');
-  buildBenchRow('away','benchAway');
+// weekSquad != null 이면 후보 = '그 주 참가자'(쿼터 로테이션 명단)만 표시, 원정 후보는 숨김
+function buildBenchHomeSquad(){
+  const row = document.getElementById('benchHome');
+  row.innerHTML = '';
+  const onNames = new Set();
+  tokens.forEach(t=>{ if(t.team==='home' && t.kind==='player') onNames.add(t.label); });
+  let count = 0;
+  weekSquad.forEach(p=>{
+    if(onNames.has(p.name)) return;                 // 이미 보드에 있는 참가자는 후보에서 제외
+    const it = document.createElement('div');
+    it.className = 'benchItem home';
+    it.innerHTML = `<span class="bnum">${p.num||'용병'}</span>` + (p.name ? `<span class="bname">${p.name}</span>` : '');
+    attachBenchDragSquad(it, p);
+    row.appendChild(it); count++;
+  });
+  if(count===0) row.innerHTML = '<span class="benchEmpty">이번 주 참가자가 모두 배치되었습니다</span>';
 }
-// 벤치 아이콘 드래그 → 필드에 드롭
-function attachBenchDrag(el, team, idx){
+function refreshBench(){
+  const awayTeam = document.getElementById('benchAwayTeam');
+  if(weekSquad){
+    buildBenchHomeSquad();
+    if(awayTeam) awayTeam.style.display = 'none';
+  } else {
+    buildBenchRow('home','benchHome');
+    if(awayTeam) awayTeam.style.display = '';
+    buildBenchRow('away','benchAway');
+  }
+}
+// 벤치 아이콘 드래그 → 필드에 드롭 (공용 코어)
+function benchDragCore(el, teamCls, ghostText, onDrop){
   const down = (e)=>{
     const isTouch = !!e.touches;
     const p0 = isTouch ? e.touches[0] : e;
@@ -937,9 +963,9 @@ function attachBenchDrag(el, team, idx){
     const beginDrag = (cx,cy)=>{
       dragging = true;
       ghost = document.createElement('div');
-      ghost.className = 'token player ' + team;
+      ghost.className = 'token player ' + teamCls;
       ghost.style.cssText = 'position:fixed;width:42px;height:42px;pointer-events:none;z-index:9999;opacity:.92;';
-      ghost.textContent = roster[team][idx].num;
+      ghost.textContent = ghostText;
       document.body.appendChild(ghost);
       ghost.style.left = cx+'px'; ghost.style.top = cy+'px';
     };
@@ -964,7 +990,7 @@ function attachBenchDrag(el, team, idx){
       if(dragging){
         const t = ev.changedTouches ? ev.changedTouches[0] : ev;
         if(ghost) ghost.remove();
-        dropBenchPlayer(team, idx, t.clientX, t.clientY);
+        onDrop(t.clientX, t.clientY);
       }
     };
     window.addEventListener('mousemove', move);
@@ -974,6 +1000,45 @@ function attachBenchDrag(el, team, idx){
   };
   el.addEventListener('mousedown', down);
   el.addEventListener('touchstart', down, {passive:true});
+}
+// 명단(roster idx) 기반 후보
+function attachBenchDrag(el, team, idx){
+  benchDragCore(el, team, roster[team][idx].num, (cx,cy)=>dropBenchPlayer(team, idx, cx, cy));
+}
+// 그 주 참가자(이름) 기반 후보
+function attachBenchDragSquad(el, p){
+  benchDragCore(el, 'home', p.num||'용병', (cx,cy)=>dropBenchName(p, cx, cy));
+}
+// 드롭 지점의 홈 선수 토큰 찾기(정확히 위 → 없으면 가장 가까운 홈 선수)
+function nearestHomePlayer(cx, cy){
+  const r = wrap.getBoundingClientRect();
+  const tgt = document.elementFromPoint(cx, cy);
+  const tokenEl = (tgt && tgt.closest) ? tgt.closest('.token') : null;
+  let hit = tokenEl ? tokens.find(t=>t.el===tokenEl) : null;
+  if(!(hit && hit.kind==='player' && hit.team==='home')){
+    const dx0=(cx-r.left)/r.width, dy0=(cy-r.top)/r.height;
+    let best=null, bd=Infinity;
+    tokens.forEach(t=>{ if(t.kind!=='player' || t.team!=='home') return;
+      const d=Math.hypot(t.x-dx0, t.y-dy0); if(d<bd){ bd=d; best=t; } });
+    hit = best;
+  }
+  return {r, hit};
+}
+function dropBenchName(p, cx, cy){
+  const r = wrap.getBoundingClientRect();
+  if(cx<r.left || cx>r.right || cy<r.top || cy>r.bottom) return;   // 필드 밖이면 취소
+  const {hit} = nearestHomePlayer(cx, cy);
+  if(hit){                                                          // 교체: 필드 선수 ↔ 후보(이름)
+    hit.label = p.name; hit.num = p.num||'용병'; hit.idx = -1;
+    hit.el.firstChild.textContent = hit.num;
+    const lbl = hit.el.querySelector('.lbl'); if(lbl) lbl.textContent = p.name;
+    hit.el.classList.toggle('guest', !/^\d+$/.test(String(hit.num)));
+  } else {                                                          // 빈 곳에 투입
+    const x = Math.min(1, Math.max(0, (cx-r.left)/r.width));
+    const y = Math.min(1, Math.max(0, (cy-r.top)/r.height));
+    makeToken('home', x, y, p.name, p.num||'용병', false, -1);
+  }
+  applyLabels(); refreshBench(); pushHistory();
 }
 function dropBenchPlayer(team, idx, cx, cy){
   const r = wrap.getBoundingClientRect();
@@ -1017,6 +1082,7 @@ document.getElementById('benchClose').onclick=()=>{ benchPanel.classList.add('hi
 
 /* ---------- 쿼터 로테이션 (회원 균등 분배) ---------- */
 let lastRotation = null;
+let weekSquad = null;   // 이번 주 참가자 [{name,num}] — 후보 벤치에 이 사람들만 표시(null이면 전체 명단)
 
 // 한 줄 = 한 명.
 //  · 이름 뒤 숫자 = 출전할 쿼터 수(쉬는 쿼터는 랜덤 분산)   예) "용병1 3"
@@ -1162,8 +1228,6 @@ function computeRotation(members, quarters, fieldCount, gkName, shuffle){
    쿼터마다 출전 선수를 포메이션 자리(수비/미드/공격)에 배분하되,
    한 명이 계속 같은 라인에 서지 않도록 매 쿼터 라인 경험을 균등하게 맞춘다.
    결과는 plan[q].lineup(포메이션 순서 배열)·pos(이름→라인)·lines(라인별 이름)로 저장. */
-const LINE_CHAR = {GK:'🧤', DEF:'수', MID:'미', FWD:'공'};
-const LINE_NAME = {GK:'GK', DEF:'수비', MID:'미드', FWD:'공격'};
 function lineOfY(y){ return y>=0.72 ? 'DEF' : (y>=0.485 ? 'MID' : 'FWD'); }   // 홈 기준 y 클수록 자기 골문
 function computePositions(R, formationKey){
   const {quarters, plan, gk, outSlots} = R;
@@ -1223,6 +1287,8 @@ function runRotation(shuffle){
   lastRotation.posRotate = posRotate;
   lastRotation.formation = document.getElementById('formationSel').value;
   if(posRotate) computePositions(lastRotation, lastRotation.formation);
+  // 후보 벤치를 '이번 주 참가자'로 한정(입력 명단 = 그 주 온 사람들)
+  weekSquad = members.map(m=>({name:m.name, num:memberNumOf(m.name)}));
   renderRotation(box, lastRotation);
 }
 document.getElementById('rotaCalc').onclick = ()=> runRotation(false);
@@ -1243,8 +1309,8 @@ function renderRotation(box, R){
   if(limitList.length) note.push(`출전제한: ${limitList.map(m=>m.name+' '+m.cap+'Q').join(', ')}`);
   if(lateList.length)  note.push(`지각(뒤쪽): ${lateList.map(m=>m.name+' '+m.cap+'Q').join(', ')}`);
   html += `<div class="rotaNote">${note.join(' · ')}</div>`;
-  html += `<div class="rotaNote">${R.posRotate ? '🧤 GK · 수 수비 · 미 미드 · 공 공격' : '○ 출전'} · 휴 휴식 · · 미도착(지각)</div>`;
-  if(R.posRotate) html += `<div class="rotaNote">🧭 포지션 로테이션 ON — 쿼터마다 수비·미드·공격 자리를 바꿔 배분합니다 (포메이션: ${R.formation})</div>`;
+  html += `<div class="rotaNote">○ 출전 · 휴 휴식 · · 미도착(지각)</div>`;
+  if(R.posRotate) html += `<div class="rotaNote">🧭 포지션 로테이션 ON — 보드에 배치하면 쿼터마다 서는 자리가 바뀝니다</div>`;
   html += `<div class="rotaNote">🔁 출전제한(예: 3쿼터) 선수는 쉬는 쿼터가 매번 랜덤으로 정해집니다 · 🎲로 다시 뽑을 수 있습니다</div>`;
   html += `<button id="rotaShuffle" class="rotaWide" style="margin:6px 0;padding:9px;background:#214a39;border:1px solid var(--accent);color:var(--accent);font-weight:700;">🎲 랜덤으로 다시 짜기</button>`;
 
@@ -1260,10 +1326,7 @@ function renderRotation(box, R){
     html += `<tr><td class="nm">${isGk?'🧤 ':''}${nm}${tag}</td>`;
     for(let q=0;q<quarters;q++){
       if(isGk) html += '<td class="gkc">GK</td>';
-      else if(plan[q].on.includes(nm)){
-        const ln = (R.posRotate && plan[q].pos) ? plan[q].pos[nm] : null;
-        html += `<td class="on">${ln ? (LINE_CHAR[ln]||'○') : '○'}</td>`;
-      }
+      else if(plan[q].on.includes(nm)) html += '<td class="on">○</td>';
       else if(q>=firstQ(nm)) html += '<td class="off">휴</td>';
       else html += '<td class="off">·</td>';
     }
@@ -1275,14 +1338,7 @@ function renderRotation(box, R){
     const onCnt = (gk?1:0) + plan[q].on.length;
     html += `<div class="rotaQ"><h4><span>${q+1}쿼터 (출전 ${onCnt}명)</span>`
          +  `<button data-q="${q}" class="rotaPlaceBtn">▶ 전술보드 배치</button></h4>`;
-    if(R.posRotate && plan[q].lines){
-      const L = plan[q].lines;
-      const seg = (lbl,a)=> (a && a.length) ? `<b>${lbl}</b> ${a.join(', ')}` : '';
-      const parts = [ gk?`🧤 ${gk}`:'', seg('🧤',L.GK), seg('공격',L.FWD), seg('미드',L.MID), seg('수비',L.DEF) ].filter(Boolean);
-      html += `<div class="qline">${parts.join(' &nbsp;·&nbsp; ')||'-'}</div>`;
-    } else {
-      html += `<div class="qline">${gk?'🧤 '+gk+' / ':''}${plan[q].on.join(', ')||'-'}</div>`;
-    }
+    html += `<div class="qline">${gk?'🧤 '+gk+' / ':''}${plan[q].on.join(', ')||'-'}</div>`;
     if(plan[q].off.length) html += `<div class="qline qoff">휴식: ${plan[q].off.join(', ')}</div>`;
     html += '</div>';
   }
