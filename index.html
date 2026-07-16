@@ -964,21 +964,23 @@ document.getElementById('benchBtn').onclick=()=>{
    후보가 없으면 필드 두 명의 자리만 무작위로 바꿈. 계속 누르면 계속 바뀜. */
 function randomSub(){
   if(activeTab!=='tactics') document.getElementById('tabTactics').click();   // 전술 보드로
+  const gkName = (weekSquad && lastRotation) ? (lastRotation.gk||'') : '';   // 고정 골키퍼(있으면)
   const field = tokens.filter(t=>t.kind==='player' && t.team==='home');
-  if(field.length===0) return;
+  const swappable = field.filter(t=> !(gkName && t.label===gkName));         // 고정 GK는 교체 대상에서 제외
+  if(swappable.length===0) return;
   // 후보 풀: weekSquad(그 주 참가자) 모드면 이름 기준, 아니면 명단 idx 기준
   let pool;
   if(weekSquad){
     const on = new Set(field.map(t=>t.label));
-    pool = weekSquad.filter(p=>!on.has(p.name));
+    pool = weekSquad.filter(p=>!on.has(p.name) && p.name!==gkName);          // 고정 GK는 무작위 투입 대상도 아님
   } else {
     const on = onFieldIdx('home');
     pool = [];
     roster.home.forEach((p,idx)=>{ if(!on.has(idx) && (p.name||'').trim()) pool.push({idx, name:p.name, num:p.num}); });
   }
   const pick = a => a[Math.floor(Math.random()*a.length)];
-  if(pool.length>0){                                   // 후보 ↔ 필드 무작위 교체
-    const t = pick(field), p = pick(pool);
+  if(pool.length>0){                                   // 후보 ↔ 필드(고정 GK 제외) 무작위 교체
+    const t = pick(swappable), p = pick(pool);
     if(weekSquad){
       t.label = p.name; t.num = p.num||'용병'; t.idx = -1;
       t.el.firstChild.textContent = t.num;
@@ -987,9 +989,9 @@ function randomSub(){
     } else {
       t.idx = p.idx; refreshToken(t);
     }
-  } else if(field.length>=2){                           // 후보 없으면 필드 두 명 자리 맞바꿈
-    const a = pick(field); let b = pick(field); let guard=0;
-    while(b===a && guard++<20) b = pick(field);
+  } else if(swappable.length>=2){                       // 후보 없으면 필드 두 명(고정 GK 제외) 자리 맞바꿈
+    const a = pick(swappable); let b = pick(swappable); let guard=0;
+    while(b===a && guard++<20) b = pick(swappable);
     if(b===a) return;
     const tx=a.x, ty=a.y; a.x=b.x; a.y=b.y; b.x=tx; b.y=ty;
     a.el.style.left=(a.x*100)+'%'; a.el.style.top=(a.y*100)+'%';
